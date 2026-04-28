@@ -3,7 +3,10 @@ name = "gtk-markdown"
 version = "0.1.0"
 edition = "2021"
 description = "A GTK4 widget that renders a subset of Markdown as native GTK widgets."
-license = "MIT OR Apache-2.0"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Pierrotws/gtk-markdown"
+keywords = ["gtk", "gtk4", "markdown", "widget", "gnome"]
+categories = ["gui", "text-processing"]
 
 [dependencies]
 gtk = { package = "gtk4", version = "0.11" }

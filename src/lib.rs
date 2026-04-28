@@ -37,4 +37,25 @@ impl MarkdownTextView {
     pub fn markdown(&self) -> String {
         self.imp().markdown.borrow().clone()
     }
+
+    /// Heading-level CSS class offset.
+    ///
+    /// A markdown `#` heading (level 1) maps to the GTK CSS class
+    /// `title-{level + offset}`. Default offset is `0`, so `#` → `title-1`,
+    /// `##` → `title-2`, etc. Use a positive offset when the widget lives
+    /// inside a container that already styles its content as a high-level
+    /// heading and `#` should look smaller.
+    pub fn heading_level_offset(&self) -> u32 {
+        self.imp().heading_level_offset.get()
+    }
+
+    /// Sets the heading-level CSS class offset and re-renders.
+    pub fn set_heading_level_offset(&self, offset: u32) {
+        if self.imp().heading_level_offset.get() == offset {
+            return;
+        }
+        self.imp().heading_level_offset.set(offset);
+        let text = self.markdown();
+        self.set_markdown(&text);
+    }
 }

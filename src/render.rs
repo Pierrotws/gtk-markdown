@@ -6,14 +6,15 @@ use crate::parser::{
     markdown_blocks, parse_inline_segments, Emphasis, InlineSegment, InlineStyle, MarkdownBlock,
 };
 
-pub(crate) fn render_into(container: &gtk::Box, value: &str) {
+pub(crate) fn render_into(container: &gtk::Box, value: &str, heading_level_offset: u32) {
     for block in markdown_blocks(value) {
         match block {
             MarkdownBlock::Paragraph(text) => {
                 container.append(&inline_flow(&text, InlineStyle::Normal, None));
             }
             MarkdownBlock::Heading { level, text } => {
-                container.append(&inline_flow(&text, InlineStyle::Heading(level), None));
+                let css_level = level.saturating_add(heading_level_offset as usize);
+                container.append(&inline_flow(&text, InlineStyle::Heading(css_level), None));
             }
             MarkdownBlock::Quote(text) => {
                 container.append(&inline_flow(&text, InlineStyle::Quote, None));

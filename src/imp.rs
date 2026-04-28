@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use gtk::{glib, prelude::*, subclass::prelude::*};
 
@@ -7,6 +7,7 @@ use crate::render;
 #[derive(Default)]
 pub struct MarkdownTextView {
     pub markdown: RefCell<String>,
+    pub heading_level_offset: Cell<u32>,
 }
 
 #[glib::object_subclass]
@@ -31,7 +32,7 @@ impl MarkdownTextView {
     pub fn set_markdown(&self, obj: &super::MarkdownTextView, text: &str) {
         let container: &gtk::Box = obj.upcast_ref();
         clear_box(container);
-        render::render_into(container, text);
+        render::render_into(container, text, self.heading_level_offset.get());
         *self.markdown.borrow_mut() = text.to_string();
     }
 }
