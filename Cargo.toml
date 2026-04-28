@@ -1,0 +1,9 @@
+[package]
+name = "gtk-markdown"
+version = "0.1.0"
+edition = "2021"
+description = "A GTK4 widget that renders a subset of Markdown as native GTK widgets."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+gtk = { package = "gtk4", version = "0.11" }
