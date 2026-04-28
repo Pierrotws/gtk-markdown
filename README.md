@@ -17,25 +17,17 @@ gtk = { package = "gtk4", version = "0.11" }
 
 ## Usage
 
-```rust
+A runnable demo lives in [`examples/window.rs`](examples/window.rs):
+
+```sh
+cargo run --example window
+```
+
+The minimal wiring is:
+
+```rust,ignore
 use gtk::{prelude::*, Application, ApplicationWindow, ScrolledWindow};
 use gtk_markdown::MarkdownTextView;
-
-const SAMPLE: &str = "\
-# Hello
-
-A *small* paragraph with `inline code` and a [link](https://example.invalid).
-
-- one
-- two
-- three
-
-```
-fn main() {
-    println!(\"hi\");
-}
-```
-";
 
 fn main() {
     let app = Application::builder()
@@ -44,16 +36,14 @@ fn main() {
 
     app.connect_activate(|app| {
         let view = MarkdownTextView::new();
-        view.set_markdown(SAMPLE);
-
-        let scroller = ScrolledWindow::builder().child(&view).build();
+        view.set_markdown("# Hello\n\nA *small* paragraph.");
 
         ApplicationWindow::builder()
             .application(app)
             .title("gtk-markdown")
             .default_width(640)
             .default_height(480)
-            .child(&scroller)
+            .child(&ScrolledWindow::builder().child(&view).build())
             .build()
             .present();
     });
@@ -80,6 +70,8 @@ Inline:
 - Bold+italic (`***x***`, `___x___`)
 - Inline code (`` `x` ``)
 - Links (`[label](uri)`)
+- Images (`![alt](path)`) — local file paths only; remote URLs and missing
+  files fall back to an italic `[image: alt]` placeholder
 
 Anything outside that subset is rendered as plain text.
 

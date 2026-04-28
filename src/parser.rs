@@ -2,9 +2,9 @@
 //!
 //! The parser is intentionally small: it covers paragraphs, ATX headings,
 //! `>` quotes, unordered (`-`/`*`/`+`) and ordered (`N.`) list items, fenced
-//! `\`\`\`` code blocks, inline code, `[label](uri)` links, and bold/italic
-//! emphasis with `*`/`_`/`**`/`__`/`***`/`___`. Soft newlines inside a
-//! paragraph collapse to spaces.
+//! `\`\`\`` code blocks, inline code, `[label](uri)` links, `![alt](src)`
+//! images, and bold/italic emphasis with `*`/`_`/`**`/`__`/`***`/`___`.
+//! Soft newlines inside a paragraph collapse to spaces.
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum MarkdownBlock {
@@ -22,6 +22,7 @@ pub(crate) enum InlineSegment<'a> {
     Styled { text: &'a str, emphasis: Emphasis },
     Code(&'a str),
     Link { label: &'a str, uri: &'a str },
+    Image { alt: &'a str, src: &'a str },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -198,6 +199,12 @@ pub(crate) fn parse_inline_segments(value: &str) -> Vec<InlineSegment<'_>> {
             continue;
         }
 
+        if let Some((alt, src, consumed)) = parse_image(rest) {
+            segments.push(InlineSegment::Image { alt, src });
+            index += consumed;
+            continue;
+        }
+
         if let Some((label, uri, consumed)) = parse_link(rest) {
             segments.push(InlineSegment::Link { label, uri });
             index += consumed;
@@ -208,7 +215,7 @@ pub(crate) fn parse_inline_segments(value: &str) -> Vec<InlineSegment<'_>> {
             .char_indices()
             .skip(1)
             .find_map(|(offset, character)| {
-                matches!(character, '*' | '_' | '`' | '[').then_some(offset)
+                matches!(character, '*' | '_' | '`' | '[' | '!').then_some(offset)
             })
             .unwrap_or(rest.len());
         segments.push(InlineSegment::Text(&rest[..next_special]));
@@ -280,6 +287,12 @@ fn parse_link(value: &str) -> Option<(&str, &str, usize)> {
     Some((label, uri, uri_end + 1))
 }
 
+fn parse_image(value: &str) -> Option<(&str, &str, usize)> {
+    let rest = value.strip_prefix('!')?;
+    let (alt, src, consumed) = parse_link(rest)?;
+    Some((alt, src, consumed + 1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,6 +322,33 @@ mod tests {
                     emphasis: Emphasis::BoldItalic,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn parses_images_distinct_from_links() {
+        assert_eq!(
+            parse_inline_segments("see ![logo](path/to/logo.png) and [site](https://example.invalid)"),
+            vec![
+                InlineSegment::Text("see "),
+                InlineSegment::Image {
+                    alt: "logo",
+                    src: "path/to/logo.png",
+                },
+                InlineSegment::Text(" and "),
+                InlineSegment::Link {
+                    label: "site",
+                    uri: "https://example.invalid",
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn bare_bang_is_kept_as_text() {
+        assert_eq!(
+            parse_inline_segments("Hello! World"),
+            vec![InlineSegment::Text("Hello"), InlineSegment::Text("! World")]
         );
     }
 

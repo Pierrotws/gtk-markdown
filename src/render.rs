@@ -50,10 +50,36 @@ fn inline_flow(text: &str, style: InlineStyle, marker: Option<&str>) -> gtk::Flo
             }
             InlineSegment::Code(text) => flow.insert(&inline_code_frame(text), -1),
             InlineSegment::Link { label, uri } => flow.insert(&link_label(label, uri, style), -1),
+            InlineSegment::Image { alt, src } => match picture_from_src(src) {
+                Some(picture) => flow.insert(&picture, -1),
+                None => flow.insert(&image_fallback_label(alt), -1),
+            },
         }
     }
 
     flow
+}
+
+fn picture_from_src(src: &str) -> Option<gtk::Picture> {
+    if src.starts_with("http://") || src.starts_with("https://") {
+        return None;
+    }
+    let path = std::path::Path::new(src);
+    if !path.is_file() {
+        return None;
+    }
+    let picture = gtk::Picture::for_filename(path);
+    picture.set_can_shrink(true);
+    Some(picture)
+}
+
+fn image_fallback_label(alt: &str) -> gtk::Label {
+    let label = gtk::Label::new(None);
+    label.set_xalign(0.0);
+    label.set_selectable(true);
+    label.set_use_markup(true);
+    label.set_markup(&format!("<i>[image: {}]</i>", escape_markup(alt)));
+    label
 }
 
 fn append_text_segment(flow: &gtk::FlowBox, text: &str, emphasis: Emphasis, style: InlineStyle) {
