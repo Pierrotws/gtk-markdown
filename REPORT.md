@@ -25,23 +25,6 @@ purged from this report as they land. Commit history carries the details.
 
 ## 3. API design
 
-### 3.2 `set_heading_level_offset` rebuilds even when markdown is empty — **Low**
-**Location:** `src/lib.rs:53–60`
-
-```rust
-pub fn set_heading_level_offset(&self, offset: u32) {
-    if self.imp().heading_level_offset.get() == offset { return; }
-    self.imp().heading_level_offset.set(offset);
-    let text = self.markdown();
-    self.set_markdown(&text);
-}
-```
-
-When `text` is empty, `set_markdown("")` still does
-`clear_box` + `render_into("")`. Cheap but needless.
-
-**Fix:** skip the rebuild if `markdown.borrow().is_empty()`.
-
 ### 3.4 No way to override link click behaviour — **Low**
 
 Links rely on `gtk::Label`'s default `activate-link` handler, which goes

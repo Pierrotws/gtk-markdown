@@ -53,6 +53,9 @@ impl MarkdownTextView {
         }
         *self.imp().base_path.borrow_mut() = new;
         let text = self.markdown();
+        if text.is_empty() {
+            return;
+        }
         self.imp().rebuild(&text);
     }
 }

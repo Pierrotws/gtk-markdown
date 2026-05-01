@@ -52,6 +52,9 @@ impl MarkdownTextView {
             return;
         }
         self.heading_level_offset.set(offset);
+        if self.markdown.borrow().is_empty() {
+            return;
+        }
         let text = self.markdown.borrow().clone();
         self.rebuild(&text);
     }
