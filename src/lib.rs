@@ -5,8 +5,8 @@
 //! child widgets (paragraphs, headings, lists, quotes, code blocks, inline
 //! code, links, emphasis).
 //!
-//! `markdown` and `heading-level-offset` are exposed as GObject properties,
-//! so they can be set from a `.ui` / GtkBuilder, bound via
+//! `markdown` and `heading-level-offset` are exposed as `GObject`
+//! properties, so they can be set from a `.ui` / `GtkBuilder`, bound via
 //! [`glib::object::ObjectExt::bind_property`], and observed through
 //! `notify::markdown` / `notify::heading-level-offset`.
 
@@ -34,11 +34,13 @@ impl Default for MarkdownTextView {
 }
 
 impl MarkdownTextView {
+    #[must_use]
     pub fn new() -> Self {
         glib::Object::new()
     }
 
     /// Returns the base path that relative image URIs are resolved against.
+    #[must_use]
     pub fn base_path(&self) -> Option<PathBuf> {
         self.imp().base_path.borrow().clone()
     }

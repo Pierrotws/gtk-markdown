@@ -9,6 +9,16 @@ and inline text wraps and selects like any other GTK label.
 
 ## Installation
 
+Once published to crates.io:
+
+```toml
+[dependencies]
+gtk-markdown = "0.1"
+gtk = { package = "gtk4", version = "0.11" }
+```
+
+In the meantime, depend on the git source:
+
 ```toml
 [dependencies]
 gtk-markdown = { git = "https://github.com/Pierrotws/gtk-markdown" }

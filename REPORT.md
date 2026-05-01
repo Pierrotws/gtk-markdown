@@ -17,42 +17,15 @@ purged from this report as they land. Commit history carries the details.
 - `cargo test` — 33/33 pass (plus 1 #[ignore]d render-pipeline test
   opted in via `cargo test -- --ignored`; needs a display).
 - `cargo clippy --all-targets` — clean at the default lint level.
-- `cargo clippy -- -W clippy::pedantic` — 5 warnings (cosmetic; itemized in
-  §6.4).
 - `cargo doc --no-deps` — builds without warnings.
 - `cargo build --example window` — clean.
 
----
-
-## 3. API design
+All Critical, High, and Medium findings are resolved. The only Low item
+left is §6.4.
 
 ---
 
 ## 6. Polish & style
-
-### 6.1 Missing `#[must_use]` on accessors — **Low**
-**Location:** `src/lib.rs:27, 37, 48` (clippy `must_use_candidate`)
-
-`new()`, `markdown()`, `heading_level_offset()` are pure value-returning
-methods.
-
-### 6.2 Missing `;` on a `match` arm — **Low**
-**Location:** `src/render.rs:49` (clippy `semicolon_if_nothing_returned`)
-
-```rust
-InlineSegment::Styled { text, emphasis } => {
-    append_text_segment(&flow, text, emphasis, style)
-},
-```
-
-The trailing expression has unit type — convention is to terminate with
-`;` so the arm is a statement.
-
-### 6.3 Doc-comment backtick parity — **Low**
-**Location:** `src/parser.rs:3–7` (clippy `doc_markdown`)
-
-The fenced-code mention `\`\`\`` confuses clippy's parser. Either escape
-differently or `#[allow(clippy::doc_markdown)]` on the module.
 
 ### 6.4 Magic numbers in the renderer — **Low**
 
@@ -62,27 +35,6 @@ self-describing and a reader has to infer intent. A short named constant
 or one-line comment for each would help. (Per the project's "comments
 only when WHY is non-obvious" rule, the column-spacing-vs-Pango-spacing
 choice in particular deserves a `// Approximates a space at 11pt` note.)
-
-### 6.5 `Cargo.toml` — no `rust-version` — **Low**
-
-Declaring an MSRV avoids surprise breakage for downstream users on older
-toolchains.
-
-### 6.6 README install snippet uses git dep — **Low**
-**Location:** `README.md` "Installation" section.
-
-Once published, `gtk-markdown = "0.1"` is friendlier than a `git = ...`
-dependency.
-
----
-
-## 7. Recommended priority order
-
-Remaining work, roughly in the order I'd tackle it:
-
-1. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
-   addition, near-zero risk.
-2. Everything else (polish, micro-perf, optional features).
 
 ---
 
