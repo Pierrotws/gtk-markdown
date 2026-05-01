@@ -14,49 +14,12 @@ purged from this report as they land. Commit history carries the details.
 
 ## Tooling status
 
-- `cargo test` — 22/22 pass.
+- `cargo test` — 28/28 pass.
 - `cargo clippy --all-targets` — clean at the default lint level.
 - `cargo clippy -- -W clippy::pedantic` — 5 warnings (cosmetic; itemized in
   §6.4).
 - `cargo doc --no-deps` — builds without warnings.
 - `cargo build --example window` — clean.
-
----
-
-## 1. Correctness — parser
-
-### 1.6 Empty alt text rejects valid images — **Low**
-**Location:** `src/parser.rs:269–281` (via `parse_link`)
-
-`parse_link` returns `None` when `label.is_empty()`. `parse_image` reuses
-that, so `![](logo.png)` — a perfectly valid image with empty alt — falls
-through to text. Pure-decorative images can't be expressed.
-
-**Fix:** in `parse_image`, allow empty alt; only `parse_link` should keep
-the empty-label rejection (an empty link label is semantically odd).
-
-### 1.7 Indented code-fence inside a code block — **Low**
-**Location:** `src/parser.rs:51–60`
-
-```rust
-let trimmed = line.trim_start();
-if trimmed.starts_with("```") { ... }
-```
-
-The check runs *before* `if in_code_block { ... }`, and uses `trim_start`.
-A code-block line that happens to begin with whitespace + ``` will close
-the fence. CommonMark only closes on an *unindented* (≤3 spaces) match.
-
-**Fix:** when `in_code_block`, only close on an unindented (or matching
-indent) ` ``` `.
-
-### 1.8 No setext headings, hr, autolinks, tables, strikethrough, ref-style links — **Low**
-**Location:** parser overall.
-
-Documented as out-of-scope in the Cargo description ("subset of Markdown"),
-but worth surfacing for users picking this crate. Notably **horizontal
-rules** (`---` / `***`) silently render as a paragraph of literal
-asterisks/hyphens.
 
 ---
 

@@ -2,9 +2,13 @@
 //!
 //! The parser is intentionally small: it covers paragraphs, ATX headings,
 //! `>` quotes, unordered (`-`/`*`/`+`) and ordered (`N.`) list items, fenced
-//! `\`\`\`` code blocks, inline code, `[label](uri)` links, `![alt](src)`
-//! images, and bold/italic emphasis with `*`/`_`/`**`/`__`/`***`/`___`.
-//! Soft newlines inside a paragraph collapse to spaces.
+//! code blocks (triple-backtick), inline code, `[label](uri)` links,
+//! `![alt](src)` images, thematic breaks (`---` / `***` / `___`), and
+//! bold/italic emphasis with `*`, `_`, `**`, `__`, `***`, `___`. Soft
+//! newlines inside a paragraph collapse to spaces.
+//!
+//! Out of scope (currently): setext headings, autolinks, tables,
+//! strikethrough, reference-style links, HTML blocks, nested lists.
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum MarkdownBlock {
@@ -17,6 +21,7 @@ pub(crate) enum MarkdownBlock {
         items: Vec<String>,
     },
     Code(String),
+    HorizontalRule,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -62,25 +67,27 @@ pub(crate) fn markdown_blocks(value: &str) -> Vec<MarkdownBlock> {
 
     for line in value.lines() {
         let trimmed = line.trim_start();
+        let leading_ws = line.len() - trimmed.len();
+        let unindented = leading_ws <= 3;
 
-        if trimmed.starts_with("```") {
-            if in_code_block {
+        if in_code_block {
+            if unindented && trimmed.starts_with("```") {
                 blocks.push(MarkdownBlock::Code(std::mem::take(&mut code_block)));
                 in_code_block = false;
             } else {
-                flush_paragraph(&mut blocks, &mut paragraph);
-                flush_quote(&mut blocks, &mut quote);
-                flush_list(&mut blocks, &mut list);
-                in_code_block = true;
+                if !code_block.is_empty() {
+                    code_block.push('\n');
+                }
+                code_block.push_str(line);
             }
             continue;
         }
 
-        if in_code_block {
-            if !code_block.is_empty() {
-                code_block.push('\n');
-            }
-            code_block.push_str(line);
+        if unindented && trimmed.starts_with("```") {
+            flush_paragraph(&mut blocks, &mut paragraph);
+            flush_quote(&mut blocks, &mut quote);
+            flush_list(&mut blocks, &mut list);
+            in_code_block = true;
             continue;
         }
 
@@ -99,6 +106,14 @@ pub(crate) fn markdown_blocks(value: &str) -> Vec<MarkdownBlock> {
                 level,
                 text: heading.trim().to_string(),
             });
+            continue;
+        }
+
+        if unindented && is_horizontal_rule(trimmed) {
+            flush_paragraph(&mut blocks, &mut paragraph);
+            flush_quote(&mut blocks, &mut quote);
+            flush_list(&mut blocks, &mut list);
+            blocks.push(MarkdownBlock::HorizontalRule);
             continue;
         }
 
@@ -208,6 +223,22 @@ fn parse_heading(line: &str) -> Option<(usize, &str)> {
 fn parse_quote_line(trimmed: &str) -> Option<&str> {
     let rest = trimmed.strip_prefix('>')?;
     Some(rest.strip_prefix(' ').unwrap_or(rest))
+}
+
+fn is_horizontal_rule(trimmed: &str) -> bool {
+    let mut chars = trimmed.chars().filter(|c| !c.is_ascii_whitespace());
+    let Some(first) = chars.next() else { return false };
+    if !matches!(first, '-' | '*' | '_') {
+        return false;
+    }
+    let mut count = 1;
+    for c in chars {
+        if c != first {
+            return false;
+        }
+        count += 1;
+    }
+    count >= 3
 }
 
 fn parse_unordered_list_item(line: &str) -> Option<&str> {
@@ -370,16 +401,22 @@ fn parse_wrapped<'a>(value: &'a str, tokens: &[&str]) -> Option<(usize, &'a str,
 }
 
 fn parse_link(value: &str) -> Option<(&str, &str, usize)> {
+    let (label, uri, consumed) = parse_link_like(value)?;
+    if label.is_empty() {
+        return None;
+    }
+    Some((label, uri, consumed))
+}
+
+fn parse_link_like(value: &str) -> Option<(&str, &str, usize)> {
     let label_end = value.strip_prefix('[')?.find("](")? + 1;
     let uri_start = label_end + 2;
     let uri_end = balanced_close_paren_offset(&value[uri_start..])? + uri_start;
     let label = &value[1..label_end];
     let uri = &value[uri_start..uri_end];
-
-    if label.is_empty() || uri.is_empty() {
+    if uri.is_empty() {
         return None;
     }
-
     Some((label, uri, uri_end + 1))
 }
 
@@ -402,7 +439,7 @@ fn balanced_close_paren_offset(value: &str) -> Option<usize> {
 
 fn parse_image(value: &str) -> Option<(&str, &str, usize)> {
     let rest = value.strip_prefix('!')?;
-    let (alt, src, consumed) = parse_link(rest)?;
+    let (alt, src, consumed) = parse_link_like(rest)?;
     Some((alt, src, consumed + 1))
 }
 
@@ -645,6 +682,58 @@ mod tests {
         assert_eq!(
             parse_inline_segments("*foo *"),
             vec![InlineSegment::Text("*foo "), InlineSegment::Text("*")]
+        );
+    }
+
+    #[test]
+    fn parse_image_with_empty_alt_text() {
+        assert_eq!(
+            parse_inline_segments("![](logo.png)"),
+            vec![InlineSegment::Image { alt: "", src: "logo.png" }]
+        );
+    }
+
+    #[test]
+    fn parse_link_still_rejects_empty_label() {
+        assert_eq!(
+            parse_inline_segments("[](https://example.invalid)"),
+            vec![InlineSegment::Text("[](https://example.invalid)")]
+        );
+    }
+
+    #[test]
+    fn indented_fence_inside_code_block_does_not_close() {
+        assert_eq!(
+            markdown_blocks("```\n    ```\n```"),
+            vec![MarkdownBlock::Code("    ```".into())]
+        );
+    }
+
+    #[test]
+    fn horizontal_rule_dashes() {
+        assert_eq!(
+            markdown_blocks("---"),
+            vec![MarkdownBlock::HorizontalRule]
+        );
+    }
+
+    #[test]
+    fn horizontal_rule_asterisks_with_spaces() {
+        assert_eq!(
+            markdown_blocks("* * *"),
+            vec![MarkdownBlock::HorizontalRule]
+        );
+    }
+
+    #[test]
+    fn dash_with_text_remains_a_list_item() {
+        assert_eq!(
+            markdown_blocks("- item"),
+            vec![MarkdownBlock::List {
+                ordered: false,
+                start: 1,
+                items: vec!["item".into()],
+            }]
         );
     }
 

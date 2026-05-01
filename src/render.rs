@@ -35,6 +35,9 @@ pub(crate) fn render_into(
                 container.append(&list_box(ordered, start, &items, base_path));
             }
             MarkdownBlock::Code(code) => container.append(&code_block_frame(&code)),
+            MarkdownBlock::HorizontalRule => {
+                container.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+            }
         }
     }
 }
