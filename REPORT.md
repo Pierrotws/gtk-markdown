@@ -190,12 +190,6 @@ Clippy's `ignore_without_reason` flags it. Stylistically harmless;
 `#[ignore = "needs a display; opt in via cargo test -- --ignored"]`
 makes the constraint visible at the test site.
 
-### 4.3 No test for the `link-activated` signal — **Low**
-
-End-to-end tests need a display already (see §4.1); add an assertion
-that the signal fires when a link's `activate-link` is triggered and
-that returning `true` inhibits the default handler.
-
 ---
 
 ## 5. Project hygiene
