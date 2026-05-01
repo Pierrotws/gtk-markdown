@@ -213,22 +213,6 @@ Already covered in §2.2. Each emphasis/link/code segment instantiates a
 fresh `gtk::Label` (sometimes wrapped in a `gtk::Frame`). For prose-heavy
 documents that's tens of widgets per paragraph, hundreds per page.
 
-### 4.2 Multi-line code blocks are O(lines) FlowBoxes — **Medium**
-**Location:** `src/render.rs:111–124`
-
-```rust
-for line in text.lines() {
-    block.append(&code_flow(line));
-}
-```
-
-A 200-line code block creates 200 FlowBoxes, each containing one Label.
-A single `Label` with `font_family="monospace"` and the code as content
-would do the same job with one widget.
-
-**Fix:** render the code block as one `gtk::Label` with monospace markup,
-inside the existing `gtk::Frame`. Selection across lines becomes a freebie.
-
 ### 4.3 `escape_markup` always allocates — **Low**
 **Location:** `src/render.rs:191–193`
 
@@ -319,10 +303,9 @@ Remaining work, roughly in the order I'd tackle it:
 2. **§2.5 — Async image loading.**
 3. **§3.1 — `glib::Properties` derive.** Brings the widget in line with
    gtk-rs idioms; cheap once you're already touching `imp.rs`.
-4. **§4.2 — Code block as one Label.**
-5. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
+4. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
    addition, near-zero risk.
-6. Everything else (polish, micro-perf, optional features).
+5. Everything else (polish, micro-perf, optional features).
 
 ---
 

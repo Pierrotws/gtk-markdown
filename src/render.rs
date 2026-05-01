@@ -220,18 +220,9 @@ fn inline_code_frame(text: &str) -> gtk::Frame {
 }
 
 fn code_block_frame(text: &str) -> gtk::Frame {
-    let block = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    block.set_hexpand(true);
-
-    for line in text.lines() {
-        block.append(&code_flow(line));
-    }
-
-    if text.is_empty() {
-        block.append(&code_flow(""));
-    }
-
-    framed_widget(&block, true, 8, 8)
+    let label = code_label(text);
+    label.set_xalign(0.0);
+    framed_widget(&label, true, 8, 8)
 }
 
 fn framed_widget<W>(
