@@ -23,40 +23,6 @@ purged from this report as they land. Commit history carries the details.
 
 ---
 
-## 2. Correctness — renderer
-
-### 2.7 Heading link styling has a bug, code links go unstyled — **Low**
-**Location:** `src/render.rs:169–185`
-
-`link_label` applies `style_markup` to the `<a>...</a>` markup, which for
-`InlineStyle::Heading` wraps it in `<b>`. That works. But `style_markup`
-does *not* reapply the `title-N` CSS class wrapping — and inside a code
-context (none yet) this would silently drop styling. More concretely:
-heading links get bolded but don't inherit the heading font *size* unless
-the CSS class is set on the same Label, which the function does do
-(`label.add_css_class(&heading_css_class(level))`). OK in practice; flagged
-because the relationship between Pango markup and CSS classes is fragile.
-
-**Fix (long-term):** unify the styling path so that "this label belongs to
-heading level N" is a single decision, not duplicated between
-`add_css_class` and `style_markup`.
-
-### 2.8 `style_markup` returns `String` for the `Normal` no-op — **Low**
-**Location:** `src/render.rs:90–96`
-
-```rust
-match style {
-    InlineStyle::Normal => markup,
-    ...
-}
-```
-
-`markup` is already a `String`; the function takes ownership and returns
-it back in the `Normal` arm. Fine, just allocating one extra `String`
-unnecessarily in the call chain. `Cow<str>` would be cleaner. Micro.
-
----
-
 ## 3. API design
 
 ### 3.2 `set_heading_level_offset` rebuilds even when markdown is empty — **Low**
@@ -92,16 +58,6 @@ The internal `parser` module is `pub(crate)`. Consumers who want to render
 their own way (or operate on the AST) have to re-parse with a different
 crate. Worth considering whether `MarkdownBlock` and `InlineSegment` should
 be public.
-
----
-
-## 4. Performance
-
-### 4.3 `escape_markup` always allocates — **Low**
-**Location:** `src/render.rs:191–193`
-
-`glib::markup_escape_text` returns a `GString`; the helper unconditionally
-clones it via `.to_string()`. Fine, but a frequently-hit allocation.
 
 ---
 

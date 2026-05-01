@@ -1,5 +1,6 @@
 //! Block / inline tokens → GTK widgets.
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use gtk::{glib, prelude::*};
@@ -153,7 +154,7 @@ fn combined_label(markup: &str, style: InlineStyle) -> gtk::Label {
         label.add_css_class(&heading_css_class(level));
     }
     label.set_use_markup(true);
-    label.set_markup(&style_markup(markup.to_string(), style));
+    label.set_markup(&style_markup(markup, style));
     label
 }
 
@@ -253,16 +254,17 @@ fn text_label(text: &str, emphasis: Emphasis, style: InlineStyle) -> gtk::Label 
 
 fn styled_text_markup(text: &str, emphasis: Emphasis, style: InlineStyle) -> String {
     let escaped = escape_markup(text);
-    let escaped = apply_emphasis_markup(&escaped, emphasis);
+    let with_emphasis = apply_emphasis_markup(&escaped, emphasis);
 
-    style_markup(escaped, style)
+    style_markup(&with_emphasis, style).into_owned()
 }
 
-fn style_markup(markup: String, style: InlineStyle) -> String {
+fn style_markup<'a>(markup: &'a str, style: InlineStyle) -> Cow<'a, str> {
     match style {
-        InlineStyle::Normal => markup,
-        InlineStyle::Heading(_) => format!("<b>{markup}</b>"),
-        InlineStyle::Quote => format!("<span style=\"italic\">{markup}</span>"),
+        // Heading boldness/size come from the `title-N` CSS class on the
+        // Label, so we don't need an extra `<b>` wrap here.
+        InlineStyle::Normal | InlineStyle::Heading(_) => Cow::Borrowed(markup),
+        InlineStyle::Quote => Cow::Owned(format!("<span style=\"italic\">{markup}</span>")),
     }
 }
 
@@ -320,8 +322,15 @@ fn heading_css_class(level: usize) -> String {
     format!("title-{level}")
 }
 
-fn escape_markup(value: &str) -> String {
-    glib::markup_escape_text(value).to_string()
+fn escape_markup(value: &str) -> Cow<'_, str> {
+    if value
+        .bytes()
+        .any(|b| matches!(b, b'<' | b'>' | b'&' | b'"' | b'\''))
+    {
+        Cow::Owned(glib::markup_escape_text(value).to_string())
+    } else {
+        Cow::Borrowed(value)
+    }
 }
 
 #[cfg(test)]
