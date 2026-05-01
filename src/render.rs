@@ -87,21 +87,71 @@ fn render_inline_segments(
     style: InlineStyle,
     base_path: Option<&Path>,
 ) {
+    let mut buffer = String::new();
+    accumulate_inline_segments(flow, &mut buffer, segments, base_emphasis, style, base_path);
+    flush_text_buffer(flow, &mut buffer, style);
+}
+
+fn accumulate_inline_segments(
+    flow: &gtk::FlowBox,
+    buffer: &mut String,
+    segments: Vec<InlineSegment<'_>>,
+    base_emphasis: Emphasis,
+    style: InlineStyle,
+    base_path: Option<&Path>,
+) {
     for segment in segments {
         match segment {
-            InlineSegment::Text(text) => append_text_segment(flow, text, base_emphasis, style),
+            InlineSegment::Text(text) => {
+                let escaped = escape_markup(text);
+                buffer.push_str(&apply_emphasis_markup(&escaped, base_emphasis));
+            }
             InlineSegment::Styled { children, emphasis } => {
                 let composed = combine_emphasis(base_emphasis, emphasis);
-                render_inline_segments(flow, children, composed, style, base_path);
+                accumulate_inline_segments(flow, buffer, children, composed, style, base_path);
             }
-            InlineSegment::Code(text) => flow.insert(&inline_code_frame(text), -1),
-            InlineSegment::Link { label, uri } => flow.insert(&link_label(label, uri, style), -1),
-            InlineSegment::Image { alt, src } => match picture_from_src(src, base_path) {
-                Some(picture) => flow.insert(&picture, -1),
-                None => flow.insert(&image_fallback_label(alt), -1),
-            },
+            InlineSegment::Link { label, uri } => {
+                let link = format!(
+                    "<a href=\"{}\">{}</a>",
+                    escape_markup(uri),
+                    escape_markup(label)
+                );
+                buffer.push_str(&apply_emphasis_markup(&link, base_emphasis));
+            }
+            InlineSegment::Code(text) => {
+                flush_text_buffer(flow, buffer, style);
+                flow.insert(&inline_code_frame(text), -1);
+            }
+            InlineSegment::Image { alt, src } => {
+                flush_text_buffer(flow, buffer, style);
+                match picture_from_src(src, base_path) {
+                    Some(picture) => flow.insert(&picture, -1),
+                    None => flow.insert(&image_fallback_label(alt), -1),
+                }
+            }
         }
     }
+}
+
+fn flush_text_buffer(flow: &gtk::FlowBox, buffer: &mut String, style: InlineStyle) {
+    let trimmed = buffer.trim();
+    if !trimmed.is_empty() {
+        flow.insert(&combined_label(trimmed, style), -1);
+    }
+    buffer.clear();
+}
+
+fn combined_label(markup: &str, style: InlineStyle) -> gtk::Label {
+    let label = gtk::Label::new(None);
+    label.set_wrap(true);
+    label.set_xalign(0.0);
+    label.set_selectable(true);
+    if let InlineStyle::Heading(level) = style {
+        label.add_css_class(&heading_css_class(level));
+    }
+    label.set_use_markup(true);
+    label.set_markup(&style_markup(markup.to_string(), style));
+    label
 }
 
 fn combine_emphasis(outer: Emphasis, inner: Emphasis) -> Emphasis {
@@ -185,17 +235,6 @@ fn image_fallback_label(alt: &str) -> gtk::Label {
     label
 }
 
-fn append_text_segment(flow: &gtk::FlowBox, text: &str, emphasis: Emphasis, style: InlineStyle) {
-    if let Some(text) = display_text_segment(text) {
-        flow.insert(&text_label(text, emphasis, style), -1);
-    }
-}
-
-fn display_text_segment(text: &str) -> Option<&str> {
-    let text = text.trim();
-    (!text.is_empty()).then_some(text)
-}
-
 fn text_label(text: &str, emphasis: Emphasis, style: InlineStyle) -> gtk::Label {
     let label = gtk::Label::new(None);
     label.set_wrap(true);
@@ -234,7 +273,7 @@ fn apply_emphasis_markup(escaped: &str, emphasis: Emphasis) -> String {
 }
 
 fn inline_code_frame(text: &str) -> gtk::Frame {
-    framed_widget(&code_flow(text), false, 2, 6)
+    framed_widget(&code_label(text), false, 2, 6)
 }
 
 fn code_block_frame(text: &str) -> gtk::Frame {
@@ -263,18 +302,6 @@ where
     frame
 }
 
-fn code_flow(text: &str) -> gtk::FlowBox {
-    let flow = gtk::FlowBox::new();
-    flow.set_selection_mode(gtk::SelectionMode::None);
-    flow.set_homogeneous(false);
-    flow.set_column_spacing(0);
-    flow.set_row_spacing(0);
-    flow.set_max_children_per_line(1000);
-    flow.insert(&code_label(text), -1);
-
-    flow
-}
-
 fn code_label(text: &str) -> gtk::Label {
     let label = gtk::Label::new(None);
     label.set_selectable(true);
@@ -283,24 +310,6 @@ fn code_label(text: &str) -> gtk::Label {
         "<span font_family=\"monospace\">{}</span>",
         escape_markup(text)
     ));
-    label
-}
-
-fn link_label(label: &str, uri: &str, style: InlineStyle) -> gtk::Label {
-    let link = format!(
-        "<a href=\"{}\">{}</a>",
-        escape_markup(uri),
-        escape_markup(label)
-    );
-
-    let label = gtk::Label::new(None);
-    label.set_xalign(0.0);
-    label.set_selectable(true);
-    if let InlineStyle::Heading(level) = style {
-        label.add_css_class(&heading_css_class(level));
-    }
-    label.set_use_markup(true);
-    label.set_markup(&style_markup(link, style));
     label
 }
 
@@ -315,13 +324,6 @@ fn escape_markup(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn keeps_same_style_words_in_one_text_label() {
-        assert_eq!(display_text_segment("This is "), Some("This is"));
-        assert_eq!(display_text_segment(" new example"), Some("new example"));
-        assert_eq!(display_text_segment(" "), None);
-    }
 
     #[test]
     fn maps_heading_levels_to_title_class() {

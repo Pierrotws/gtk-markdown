@@ -14,7 +14,7 @@ purged from this report as they land. Commit history carries the details.
 
 ## Tooling status
 
-- `cargo test` — 23/23 pass.
+- `cargo test` — 22/22 pass.
 - `cargo clippy --all-targets` — clean at the default lint level.
 - `cargo clippy -- -W clippy::pedantic` — 5 warnings (cosmetic; itemized in
   §6.4).
@@ -61,36 +61,6 @@ asterisks/hyphens.
 ---
 
 ## 2. Correctness — renderer
-
-### 2.2 FlowBox is being used as a text-flow container — **Medium / Architecture**
-**Location:** `src/render.rs:33–57`
-
-`gtk::FlowBox` arranges children in a *grid* (children fit horizontally up
-to `max_children_per_line`, then wrap to a new row). Each inline run is a
-separate child, so:
-
-- **Word spacing is `column_spacing(4)`** instead of natural Pango
-  inter-word spacing — close to one ASCII space at 11pt sans-serif, but
-  doesn't track font size or the actual space-glyph width.
-- **Selection cannot cross children.** Each emphasis run / link / code
-  span is its own selectable label; users can't select a phrase that
-  spans `*foo* bar`.
-- **Wrapping happens at child boundaries**, not within paragraphs, so a
-  very long single-segment paragraph and one with many small segments
-  wrap differently for the same visual width.
-- **Justification, hyphenation, `text-wrap` modes** — none of these can
-  be applied across the inline run.
-
-This is a deliberate-looking decision (it lets framed inline code and
-images live alongside text), but it puts a ceiling on text quality. The
-common alternative is "build one Pango-marked-up `gtk::Label` per run of
-homogeneous text/links/emphasis, only break out widgets for things that
-genuinely need to be widgets (framed code, images)."
-
-**Fix:** for emphasis-only and link-only spans, accumulate Pango markup
-into a single `Label` and only insert separate widgets for `Code` and
-`Image` segments. Use a horizontal `Box` with children that are mostly
-single-paragraph Labels to preserve in-paragraph wrapping inside Pango.
 
 ### 2.7 Heading link styling has a bug, code links go unstyled — **Low**
 **Location:** `src/render.rs:169–185`
@@ -163,12 +133,6 @@ be public.
 ---
 
 ## 4. Performance
-
-### 4.1 N labels per paragraph — **Medium**
-
-Already covered in §2.2. Each emphasis/link/code segment instantiates a
-fresh `gtk::Label` (sometimes wrapped in a `gtk::Frame`). For prose-heavy
-documents that's tens of widgets per paragraph, hundreds per page.
 
 ### 4.3 `escape_markup` always allocates — **Low**
 **Location:** `src/render.rs:191–193`
@@ -255,11 +219,9 @@ dependency.
 
 Remaining work, roughly in the order I'd tackle it:
 
-1. **§2.2 — Inline rendering rewrite (FlowBox → Pango Labels).**
-   Biggest visual-quality lever. Subsumes §4.1.
-2. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
+1. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
    addition, near-zero risk.
-3. Everything else (polish, micro-perf, optional features).
+2. Everything else (polish, micro-perf, optional features).
 
 ---
 
