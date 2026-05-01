@@ -1,7 +1,7 @@
 # gtk-markdown — Code Review Report
 
-A full review of the crate as of the current `main`. Findings are grouped by
-area and tagged with severity:
+A full review of the crate. Findings are grouped by area and tagged with
+severity:
 
 - **Critical** — incorrect output for plausible inputs, or a safety hazard.
 - **High** — visible bug or significant API/architecture concern that will
@@ -9,82 +9,21 @@ area and tagged with severity:
 - **Medium** — quality issue worth fixing soon.
 - **Low** — polish, micro-optimization, or future-proofing.
 
+Section numbers from the original review are preserved; resolved items are
+purged from this report as they land. Commit history carries the details.
+
 ## Tooling status
 
-- `cargo test` — 18/18 pass.
+- `cargo test` — 20/20 pass.
 - `cargo clippy --all-targets` — clean at the default lint level.
 - `cargo clippy -- -W clippy::pedantic` — 5 warnings (cosmetic; itemized in
   §6.4).
 - `cargo doc --no-deps` — builds without warnings.
 - `cargo build --example window` — clean.
 
-The crate compiles and runs. Most findings below are about behaviour you'll
-notice once you push real Markdown through the renderer, not about
-build-blocking bugs.
-
-All four **High** findings (§1.1, §1.2, §1.3, §2.1) have been resolved; see
-the per-section status notes below.
-
 ---
 
 ## 1. Correctness — parser
-
-### 1.1 Multi-line block quotes don't merge — **High** — *Resolved*
-**Location (was):** `src/parser.rs:82–86`
-
-Each `> ...` line used to become a separate `Quote` block. A 3-line quote
-rendered as three independent italic paragraphs with no visual grouping.
-
-**Fix applied:** `markdown_blocks` now accumulates consecutive `>`-prefixed
-lines into a single `MarkdownBlock::Quote(String)`, joined by spaces (soft
-newlines like paragraphs). The leading marker accepts both `> ` and `>`
-(per CommonMark). Covered by `merges_consecutive_quote_lines` and
-`separates_quotes_split_by_blank_line`.
-
-### 1.2 No backslash escapes — **High** — *Resolved*
-**Location (was):** `src/parser.rs:154` (and parsing helpers below it)
-
-`\*not italic\*`, `\[not a link\]`, etc. used to parse as if the
-backslashes weren't there.
-
-**Fix applied:** `parse_inline_segments` now checks for a leading `\`
-followed by an ASCII-punctuation char and emits that char as a literal text
-segment, skipping both bytes. `\` is also part of the `next_special` set so
-text walks split before an escape rather than swallowing it. Covered by
-`backslash_escapes_punctuation` and `backslash_before_non_punctuation_is_kept`.
-
-### 1.3 Nested emphasis doesn't recurse — **High** — *Resolved*
-**Location (was):** `src/parser.rs:154–219`, `src/render.rs:46–57`
-
-Inline segments held `&str`, not nested children, so any inline structure
-inside emphasis rendered as literal text.
-
-**Fix applied:** `InlineSegment::Styled` now carries
-`children: Vec<InlineSegment<'a>>` instead of a `&str`. `parse_emphasis`
-recursively parses inner text through `parse_inline_segments`. The renderer
-walks children and composes nested emphasis via a new `combine_emphasis`
-(Bold + Italic = BoldItalic, etc.). Inline code, links, and images inside
-emphasis now render as their own widgets rather than being escaped. Covered
-by `nested_emphasis_recurses` and `combines_nested_emphasis`.
-
-Note: the existing `parse_emphasis` still picks the first matching closer
-greedily — runs of three+ `*` against an outer `**` (e.g.
-`**bold and *italic***`) still get truncated by one `*` because of that. A
-proper CommonMark delimiter run / left-flanking / right-flanking pass is
-out of scope for this fix; the recursion change unlocks the easy nesting
-cases (`**outer *inner* outer**`).
-
-### 1.4 Emphasis allows internal whitespace — **Medium**
-**Location:** `src/parser.rs:221–245`
-
-`* not italic *` parses as italic ` not italic `. CommonMark requires that
-the run-start delimiter is *not* followed by whitespace (and vice-versa
-for run-end), specifically to keep prose like "use `*` for multiplication
-and `*` for pointers" from collapsing into a single italic span across the
-sentence.
-
-**Fix:** in `parse_emphasis`, reject when `value[token_len..].starts_with(char::is_whitespace)`
-or when the byte before `inner_end` is whitespace.
 
 ### 1.5 Link/image URI truncates at the first `)` — **Medium**
 **Location:** `src/parser.rs:269–281`
@@ -136,27 +75,6 @@ asterisks/hyphens.
 ---
 
 ## 2. Correctness — renderer
-
-### 2.1 List items are not grouped — **High** — *Resolved*
-**Location (was):** `src/render.rs:22–27`
-
-Every list item used to become a top-level FlowBox sibling of the
-surrounding paragraphs, with no list container.
-
-**Fix applied:** the parser's `UnorderedListItem` / `OrderedListItem` block
-variants are replaced by a single
-`MarkdownBlock::List { ordered: bool, start: u32, items: Vec<String> }`.
-`markdown_blocks` accumulates consecutive items of the same kind into one
-`List` block (and starts a new one on a kind change or on an intervening
-paragraph/heading/quote/code). The renderer's new `list_box` produces a
-vertical `gtk::Box` whose children are the per-item `inline_flow` rows
-prefixed with their marker (`•` or `N.` numbered from `start`). Covered by
-`groups_consecutive_unordered_list_items` and
-`ordered_and_unordered_lists_split`.
-
-Nested lists are still out of scope: an indented `- nested` line is parsed
-as a sibling item rather than a sub-list. That requires the parser to
-track per-line indentation, which is a separate change.
 
 ### 2.2 FlowBox is being used as a text-flow container — **Medium / Architecture**
 **Location:** `src/render.rs:33–57`
@@ -373,14 +291,6 @@ clones it via `.to_string()`. Fine, but a frequently-hit allocation.
 
 ## 5. Test coverage
 
-### 5.1 No tests for `MarkdownBlock::Quote` — **Medium** — *Partly addressed*
-
-`parses_structural_markdown_blocks` covers heading + lists; quote parsing
-was previously exercised nowhere. The §1.1 fix added
-`merges_consecutive_quote_lines` and `separates_quotes_split_by_blank_line`,
-so single- and multi-line quote behaviour is now pinned. Edge cases (mixed
-`> ` vs `>` markers, `>` inside other blocks) still aren't covered.
-
 ### 5.2 No render-pipeline tests — **Low**
 
 All render tests are micro-tests of helper functions
@@ -454,23 +364,20 @@ dependency.
 
 ## 7. Recommended priority order
 
-If the goal is "make this widget pleasant to use in a real app," I'd
-tackle in roughly this order:
+Remaining work, roughly in the order I'd tackle it:
 
-1. ~~**§2.2 + §1.3 — Inline rendering rewrite.**~~ §1.3 done (nested
-   emphasis recurses). §2.2 (FlowBox-vs-Pango) still open and is the
-   biggest visual-quality lever.
-2. ~~**§2.1 + §1.1 — Lists and block quotes.**~~ Both done.
-3. ~~**§1.2** + §1.4 + §1.5 — Inline parser correctness.~~ §1.2 done;
-   whitespace-bounded emphasis (§1.4) and balanced parens in URIs
-   (§1.5) remain.
+1. **§2.2 — Inline rendering rewrite (FlowBox → Pango Labels).**
+   Biggest visual-quality lever. Subsumes §4.1.
+2. **§1.5 — Balanced URI parens.** Small parser fix.
+3. **§2.6 — Early-return when markdown unchanged.** One-liner.
 4. **§2.3 + §2.4 + §2.5 — Image robustness.** Size constraints, base-path
    API, async loading.
 5. **§3.1 — `glib::Properties` derive.** Brings the widget in line with
    gtk-rs idioms; cheap once you're already touching `imp.rs`.
-6. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
-   addition, near-zero risk. (§5.1 quote tests landed with the §1.1 fix.)
-7. Everything else (polish, micro-perf, optional features).
+6. **§4.2 — Code block as one Label.**
+7. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
+   addition, near-zero risk.
+8. Everything else (polish, micro-perf, optional features).
 
 ---
 

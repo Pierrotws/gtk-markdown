@@ -319,8 +319,20 @@ fn parse_emphasis<'a>(
             continue;
         }
 
+        if value[inner_start..].starts_with(char::is_whitespace) {
+            continue;
+        }
+
         let inner_end = value[inner_start..].find(token)? + inner_start;
         if inner_end == inner_start {
+            continue;
+        }
+
+        if value[..inner_end]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_whitespace)
+        {
             continue;
         }
 
@@ -567,6 +579,25 @@ mod tests {
         assert_eq!(
             parse_inline_segments(r"a\b"),
             vec![InlineSegment::Text("a"), InlineSegment::Text(r"\b")]
+        );
+    }
+
+    #[test]
+    fn whitespace_bounded_emphasis_is_text() {
+        assert_eq!(
+            parse_inline_segments("* not italic *"),
+            vec![
+                InlineSegment::Text("* not italic "),
+                InlineSegment::Text("*"),
+            ]
+        );
+    }
+
+    #[test]
+    fn trailing_whitespace_inside_emphasis_disqualifies() {
+        assert_eq!(
+            parse_inline_segments("*foo *"),
+            vec![InlineSegment::Text("*foo "), InlineSegment::Text("*")]
         );
     }
 
