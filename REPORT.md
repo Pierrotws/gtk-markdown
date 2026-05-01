@@ -92,18 +92,6 @@ into a single `Label` and only insert separate widgets for `Code` and
 `Image` segments. Use a horizontal `Box` with children that are mostly
 single-paragraph Labels to preserve in-paragraph wrapping inside Pango.
 
-### 2.3 `Picture` has no size constraint — **Medium**
-**Location:** `src/render.rs:59–71` (`picture_from_src`)
-
-A 4000×3000 PNG will request 4000×3000 in the FlowBox; nothing bounds it.
-Combined with the FlowBox host, this can produce an enormous widget that
-forces the parent `ScrolledWindow` into pathological layouts (or grows
-the window past the screen).
-
-**Fix:** at minimum, `picture.set_content_fit(gtk::ContentFit::Contain)`
-and either a max `set_size_request(-1, max_height)` or a wrapping `Frame`
-that constrains via CSS `max-width`.
-
 ### 2.4 Image source is resolved against the process CWD — **Medium**
 **Location:** `src/render.rs:62–67`
 
@@ -340,8 +328,7 @@ Remaining work, roughly in the order I'd tackle it:
 
 1. **§2.2 — Inline rendering rewrite (FlowBox → Pango Labels).**
    Biggest visual-quality lever. Subsumes §4.1.
-2. **§2.3 + §2.4 + §2.5 — Image robustness.** Size constraints, base-path
-   API, async loading.
+2. **§2.4 + §2.5 — Image robustness.** Base-path API, async loading.
 3. **§3.1 — `glib::Properties` derive.** Brings the widget in line with
    gtk-rs idioms; cheap once you're already touching `imp.rs`.
 4. **§4.2 — Code block as one Label.**

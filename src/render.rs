@@ -91,6 +91,9 @@ fn combine_emphasis(outer: Emphasis, inner: Emphasis) -> Emphasis {
     }
 }
 
+const PICTURE_CSS_CLASS: &str = "gtk-markdown-picture";
+const MAX_PICTURE_HEIGHT_PX: u32 = 480;
+
 fn picture_from_src(src: &str) -> Option<gtk::Picture> {
     if src.starts_with("http://") || src.starts_with("https://") {
         return None;
@@ -99,9 +102,32 @@ fn picture_from_src(src: &str) -> Option<gtk::Picture> {
     if !path.is_file() {
         return None;
     }
+    install_picture_css_provider();
     let picture = gtk::Picture::for_filename(path);
     picture.set_can_shrink(true);
+    #[allow(deprecated)]
+    picture.set_keep_aspect_ratio(true);
+    picture.add_css_class(PICTURE_CSS_CLASS);
     Some(picture)
+}
+
+fn install_picture_css_provider() {
+    use std::sync::OnceLock;
+    static INSTALLED: OnceLock<()> = OnceLock::new();
+    INSTALLED.get_or_init(|| {
+        let provider = gtk::CssProvider::new();
+        #[allow(deprecated)]
+        provider.load_from_data(&format!(
+            ".{PICTURE_CSS_CLASS} {{ max-height: {MAX_PICTURE_HEIGHT_PX}px; }}"
+        ));
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+    });
 }
 
 fn image_fallback_label(alt: &str) -> gtk::Label {
