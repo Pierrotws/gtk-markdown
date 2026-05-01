@@ -19,15 +19,25 @@ pub(crate) fn render_into(container: &gtk::Box, value: &str, heading_level_offse
             MarkdownBlock::Quote(text) => {
                 container.append(&inline_flow(&text, InlineStyle::Quote, None));
             }
-            MarkdownBlock::UnorderedListItem(text) => {
-                container.append(&inline_flow(&text, InlineStyle::Normal, Some("•")));
-            }
-            MarkdownBlock::OrderedListItem { marker, text } => {
-                container.append(&inline_flow(&text, InlineStyle::Normal, Some(&marker)));
+            MarkdownBlock::List { ordered, start, items } => {
+                container.append(&list_box(ordered, start, &items));
             }
             MarkdownBlock::Code(code) => container.append(&code_block_frame(&code)),
         }
     }
+}
+
+fn list_box(ordered: bool, start: u32, items: &[String]) -> gtk::Box {
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    for (offset, item) in items.iter().enumerate() {
+        let marker = if ordered {
+            format!("{}.", start + offset as u32)
+        } else {
+            "•".to_string()
+        };
+        outer.append(&inline_flow(item, InlineStyle::Normal, Some(&marker)));
+    }
+    outer
 }
 
 fn inline_flow(text: &str, style: InlineStyle, marker: Option<&str>) -> gtk::FlowBox {
@@ -42,11 +52,23 @@ fn inline_flow(text: &str, style: InlineStyle, marker: Option<&str>) -> gtk::Flo
         flow.insert(&text_label(marker, Emphasis::Normal, style), -1);
     }
 
-    for segment in parse_inline_segments(text) {
+    render_inline_segments(&flow, parse_inline_segments(text), Emphasis::Normal, style);
+
+    flow
+}
+
+fn render_inline_segments(
+    flow: &gtk::FlowBox,
+    segments: Vec<InlineSegment<'_>>,
+    base_emphasis: Emphasis,
+    style: InlineStyle,
+) {
+    for segment in segments {
         match segment {
-            InlineSegment::Text(text) => append_text_segment(&flow, text, Emphasis::Normal, style),
-            InlineSegment::Styled { text, emphasis } => {
-                append_text_segment(&flow, text, emphasis, style)
+            InlineSegment::Text(text) => append_text_segment(flow, text, base_emphasis, style),
+            InlineSegment::Styled { children, emphasis } => {
+                let composed = combine_emphasis(base_emphasis, emphasis);
+                render_inline_segments(flow, children, composed, style);
             }
             InlineSegment::Code(text) => flow.insert(&inline_code_frame(text), -1),
             InlineSegment::Link { label, uri } => flow.insert(&link_label(label, uri, style), -1),
@@ -56,8 +78,17 @@ fn inline_flow(text: &str, style: InlineStyle, marker: Option<&str>) -> gtk::Flo
             },
         }
     }
+}
 
-    flow
+fn combine_emphasis(outer: Emphasis, inner: Emphasis) -> Emphasis {
+    use Emphasis::{Bold, BoldItalic, Italic, Normal};
+    match (outer, inner) {
+        (Normal, x) | (x, Normal) => x,
+        (BoldItalic, _) | (_, BoldItalic) => BoldItalic,
+        (Bold, Italic) | (Italic, Bold) => BoldItalic,
+        (Bold, Bold) => Bold,
+        (Italic, Italic) => Italic,
+    }
 }
 
 fn picture_from_src(src: &str) -> Option<gtk::Picture> {
@@ -241,5 +272,14 @@ mod tests {
             styled_text_markup("<unsafe>", Emphasis::Bold, InlineStyle::Normal),
             "<b>&lt;unsafe&gt;</b>"
         );
+    }
+
+    #[test]
+    fn combines_nested_emphasis() {
+        assert_eq!(combine_emphasis(Emphasis::Bold, Emphasis::Italic), Emphasis::BoldItalic);
+        assert_eq!(combine_emphasis(Emphasis::Italic, Emphasis::Bold), Emphasis::BoldItalic);
+        assert_eq!(combine_emphasis(Emphasis::Normal, Emphasis::Bold), Emphasis::Bold);
+        assert_eq!(combine_emphasis(Emphasis::Bold, Emphasis::Normal), Emphasis::Bold);
+        assert_eq!(combine_emphasis(Emphasis::BoldItalic, Emphasis::Italic), Emphasis::BoldItalic);
     }
 }

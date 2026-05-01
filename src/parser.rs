@@ -11,15 +11,21 @@ pub(crate) enum MarkdownBlock {
     Paragraph(String),
     Heading { level: usize, text: String },
     Quote(String),
-    UnorderedListItem(String),
-    OrderedListItem { marker: String, text: String },
+    List {
+        ordered: bool,
+        start: u32,
+        items: Vec<String>,
+    },
     Code(String),
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum InlineSegment<'a> {
     Text(&'a str),
-    Styled { text: &'a str, emphasis: Emphasis },
+    Styled {
+        children: Vec<InlineSegment<'a>>,
+        emphasis: Emphasis,
+    },
     Code(&'a str),
     Link { label: &'a str, uri: &'a str },
     Image { alt: &'a str, src: &'a str },
@@ -40,9 +46,17 @@ pub(crate) enum InlineStyle {
     Quote,
 }
 
+struct PendingList {
+    ordered: bool,
+    start: u32,
+    items: Vec<String>,
+}
+
 pub(crate) fn markdown_blocks(value: &str) -> Vec<MarkdownBlock> {
     let mut blocks = Vec::new();
     let mut paragraph = String::new();
+    let mut quote = String::new();
+    let mut list: Option<PendingList> = None;
     let mut code_block = String::new();
     let mut in_code_block = false;
 
@@ -55,6 +69,8 @@ pub(crate) fn markdown_blocks(value: &str) -> Vec<MarkdownBlock> {
                 in_code_block = false;
             } else {
                 flush_paragraph(&mut blocks, &mut paragraph);
+                flush_quote(&mut blocks, &mut quote);
+                flush_list(&mut blocks, &mut list);
                 in_code_block = true;
             }
             continue;
@@ -65,53 +81,88 @@ pub(crate) fn markdown_blocks(value: &str) -> Vec<MarkdownBlock> {
                 code_block.push('\n');
             }
             code_block.push_str(line);
-        } else {
-            if line.trim().is_empty() {
-                flush_paragraph(&mut blocks, &mut paragraph);
-                continue;
-            }
-
-            if let Some((level, heading)) = parse_heading(trimmed) {
-                flush_paragraph(&mut blocks, &mut paragraph);
-                blocks.push(MarkdownBlock::Heading {
-                    level,
-                    text: heading.trim().to_string(),
-                });
-                continue;
-            }
-
-            if let Some(quote) = trimmed.strip_prefix("> ") {
-                flush_paragraph(&mut blocks, &mut paragraph);
-                blocks.push(MarkdownBlock::Quote(quote.trim().to_string()));
-                continue;
-            }
-
-            if let Some(item) = parse_unordered_list_item(trimmed) {
-                flush_paragraph(&mut blocks, &mut paragraph);
-                blocks.push(MarkdownBlock::UnorderedListItem(item.trim().to_string()));
-                continue;
-            }
-
-            if let Some((number, item)) = parse_ordered_list_item(trimmed) {
-                flush_paragraph(&mut blocks, &mut paragraph);
-                blocks.push(MarkdownBlock::OrderedListItem {
-                    marker: format!("{number}."),
-                    text: item.trim().to_string(),
-                });
-                continue;
-            }
-
-            if !paragraph.is_empty() {
-                paragraph.push(' ');
-            }
-            paragraph.push_str(line.trim());
+            continue;
         }
+
+        if line.trim().is_empty() {
+            flush_paragraph(&mut blocks, &mut paragraph);
+            flush_quote(&mut blocks, &mut quote);
+            flush_list(&mut blocks, &mut list);
+            continue;
+        }
+
+        if let Some((level, heading)) = parse_heading(trimmed) {
+            flush_paragraph(&mut blocks, &mut paragraph);
+            flush_quote(&mut blocks, &mut quote);
+            flush_list(&mut blocks, &mut list);
+            blocks.push(MarkdownBlock::Heading {
+                level,
+                text: heading.trim().to_string(),
+            });
+            continue;
+        }
+
+        if let Some(rest) = parse_quote_line(trimmed) {
+            flush_paragraph(&mut blocks, &mut paragraph);
+            flush_list(&mut blocks, &mut list);
+            if !quote.is_empty() {
+                quote.push(' ');
+            }
+            quote.push_str(rest.trim());
+            continue;
+        }
+
+        if let Some(item) = parse_unordered_list_item(trimmed) {
+            flush_paragraph(&mut blocks, &mut paragraph);
+            flush_quote(&mut blocks, &mut quote);
+            let item = item.trim().to_string();
+            match list.as_mut() {
+                Some(pending) if !pending.ordered => pending.items.push(item),
+                _ => {
+                    flush_list(&mut blocks, &mut list);
+                    list = Some(PendingList {
+                        ordered: false,
+                        start: 1,
+                        items: vec![item],
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let Some((number, item)) = parse_ordered_list_item(trimmed) {
+            flush_paragraph(&mut blocks, &mut paragraph);
+            flush_quote(&mut blocks, &mut quote);
+            let item = item.trim().to_string();
+            let parsed_start: u32 = number.parse().unwrap_or(1);
+            match list.as_mut() {
+                Some(pending) if pending.ordered => pending.items.push(item),
+                _ => {
+                    flush_list(&mut blocks, &mut list);
+                    list = Some(PendingList {
+                        ordered: true,
+                        start: parsed_start,
+                        items: vec![item],
+                    });
+                }
+            }
+            continue;
+        }
+
+        flush_quote(&mut blocks, &mut quote);
+        flush_list(&mut blocks, &mut list);
+        if !paragraph.is_empty() {
+            paragraph.push(' ');
+        }
+        paragraph.push_str(line.trim());
     }
 
     if in_code_block {
         blocks.push(MarkdownBlock::Code(code_block));
     }
     flush_paragraph(&mut blocks, &mut paragraph);
+    flush_quote(&mut blocks, &mut quote);
+    flush_list(&mut blocks, &mut list);
 
     blocks
 }
@@ -124,6 +175,24 @@ fn flush_paragraph(blocks: &mut Vec<MarkdownBlock>, paragraph: &mut String) {
     blocks.push(MarkdownBlock::Paragraph(std::mem::take(paragraph)));
 }
 
+fn flush_quote(blocks: &mut Vec<MarkdownBlock>, quote: &mut String) {
+    if quote.is_empty() {
+        return;
+    }
+
+    blocks.push(MarkdownBlock::Quote(std::mem::take(quote)));
+}
+
+fn flush_list(blocks: &mut Vec<MarkdownBlock>, list: &mut Option<PendingList>) {
+    if let Some(pending) = list.take() {
+        blocks.push(MarkdownBlock::List {
+            ordered: pending.ordered,
+            start: pending.start,
+            items: pending.items,
+        });
+    }
+}
+
 fn parse_heading(line: &str) -> Option<(usize, &str)> {
     let level = line
         .chars()
@@ -134,6 +203,11 @@ fn parse_heading(line: &str) -> Option<(usize, &str)> {
     } else {
         None
     }
+}
+
+fn parse_quote_line(trimmed: &str) -> Option<&str> {
+    let rest = trimmed.strip_prefix('>')?;
+    Some(rest.strip_prefix(' ').unwrap_or(rest))
 }
 
 fn parse_unordered_list_item(line: &str) -> Option<&str> {
@@ -159,12 +233,22 @@ pub(crate) fn parse_inline_segments(value: &str) -> Vec<InlineSegment<'_>> {
     while index < value.len() {
         let rest = &value[index..];
 
+        if let Some(after_backslash) = rest.strip_prefix('\\') {
+            if let Some(escaped) = after_backslash.chars().next() {
+                if escaped.is_ascii_punctuation() {
+                    segments.push(InlineSegment::Text(&value[index + 1..index + 2]));
+                    index += 2;
+                    continue;
+                }
+            }
+        }
+
         if let Some((token_len, inner, consumed, emphasis)) = parse_emphasis(
             rest,
             &[("___", Emphasis::BoldItalic), ("***", Emphasis::BoldItalic)],
         ) {
             segments.push(InlineSegment::Styled {
-                text: inner,
+                children: parse_inline_segments(inner),
                 emphasis,
             });
             index += token_len + consumed + token_len;
@@ -175,7 +259,7 @@ pub(crate) fn parse_inline_segments(value: &str) -> Vec<InlineSegment<'_>> {
             parse_emphasis(rest, &[("__", Emphasis::Bold), ("**", Emphasis::Bold)])
         {
             segments.push(InlineSegment::Styled {
-                text: inner,
+                children: parse_inline_segments(inner),
                 emphasis,
             });
             index += token_len + consumed + token_len;
@@ -186,7 +270,7 @@ pub(crate) fn parse_inline_segments(value: &str) -> Vec<InlineSegment<'_>> {
             parse_emphasis(rest, &[("_", Emphasis::Italic), ("*", Emphasis::Italic)])
         {
             segments.push(InlineSegment::Styled {
-                text: inner,
+                children: parse_inline_segments(inner),
                 emphasis,
             });
             index += token_len + consumed + token_len;
@@ -215,7 +299,7 @@ pub(crate) fn parse_inline_segments(value: &str) -> Vec<InlineSegment<'_>> {
             .char_indices()
             .skip(1)
             .find_map(|(offset, character)| {
-                matches!(character, '*' | '_' | '`' | '[' | '!').then_some(offset)
+                matches!(character, '*' | '_' | '`' | '[' | '!' | '\\').then_some(offset)
             })
             .unwrap_or(rest.len());
         segments.push(InlineSegment::Text(&rest[..next_special]));
@@ -297,30 +381,29 @@ fn parse_image(value: &str) -> Option<(&str, &str, usize)> {
 mod tests {
     use super::*;
 
+    fn text_child(text: &str) -> InlineSegment<'_> {
+        InlineSegment::Text(text)
+    }
+
+    fn styled(text: &str, emphasis: Emphasis) -> InlineSegment<'_> {
+        InlineSegment::Styled {
+            children: vec![text_child(text)],
+            emphasis,
+        }
+    }
+
     #[test]
     fn parses_marker_emphasis() {
         assert_eq!(
             parse_inline_segments("*italic* _also italic_ __bold__ ___both___"),
             vec![
-                InlineSegment::Styled {
-                    text: "italic",
-                    emphasis: Emphasis::Italic,
-                },
+                styled("italic", Emphasis::Italic),
                 InlineSegment::Text(" "),
-                InlineSegment::Styled {
-                    text: "also italic",
-                    emphasis: Emphasis::Italic,
-                },
+                styled("also italic", Emphasis::Italic),
                 InlineSegment::Text(" "),
-                InlineSegment::Styled {
-                    text: "bold",
-                    emphasis: Emphasis::Bold,
-                },
+                styled("bold", Emphasis::Bold),
                 InlineSegment::Text(" "),
-                InlineSegment::Styled {
-                    text: "both",
-                    emphasis: Emphasis::BoldItalic,
-                },
+                styled("both", Emphasis::BoldItalic),
             ]
         );
     }
@@ -400,12 +483,108 @@ mod tests {
                     level: 1,
                     text: "Title".into(),
                 },
-                MarkdownBlock::UnorderedListItem("item".into()),
-                MarkdownBlock::OrderedListItem {
-                    marker: "2.".into(),
-                    text: "next".into(),
+                MarkdownBlock::List {
+                    ordered: false,
+                    start: 1,
+                    items: vec!["item".into()],
+                },
+                MarkdownBlock::List {
+                    ordered: true,
+                    start: 2,
+                    items: vec!["next".into()],
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn merges_consecutive_quote_lines() {
+        assert_eq!(
+            markdown_blocks("> first line\n> second line\n\nparagraph"),
+            vec![
+                MarkdownBlock::Quote("first line second line".into()),
+                MarkdownBlock::Paragraph("paragraph".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn separates_quotes_split_by_blank_line() {
+        assert_eq!(
+            markdown_blocks("> a\n\n> b"),
+            vec![
+                MarkdownBlock::Quote("a".into()),
+                MarkdownBlock::Quote("b".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn groups_consecutive_unordered_list_items() {
+        assert_eq!(
+            markdown_blocks("- one\n- two\n- three"),
+            vec![MarkdownBlock::List {
+                ordered: false,
+                start: 1,
+                items: vec!["one".into(), "two".into(), "three".into()],
+            }]
+        );
+    }
+
+    #[test]
+    fn ordered_and_unordered_lists_split() {
+        assert_eq!(
+            markdown_blocks("- a\n- b\n1. c\n2. d"),
+            vec![
+                MarkdownBlock::List {
+                    ordered: false,
+                    start: 1,
+                    items: vec!["a".into(), "b".into()],
+                },
+                MarkdownBlock::List {
+                    ordered: true,
+                    start: 1,
+                    items: vec!["c".into(), "d".into()],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn backslash_escapes_punctuation() {
+        assert_eq!(
+            parse_inline_segments(r"\*not italic\*"),
+            vec![
+                InlineSegment::Text("*"),
+                InlineSegment::Text("not italic"),
+                InlineSegment::Text("*"),
+            ]
+        );
+    }
+
+    #[test]
+    fn backslash_before_non_punctuation_is_kept() {
+        assert_eq!(
+            parse_inline_segments(r"a\b"),
+            vec![InlineSegment::Text("a"), InlineSegment::Text(r"\b")]
+        );
+    }
+
+    #[test]
+    fn nested_emphasis_recurses() {
+        assert_eq!(
+            parse_inline_segments("**outer *inner* outer**"),
+            vec![InlineSegment::Styled {
+                children: vec![
+                    InlineSegment::Text("outer "),
+                    InlineSegment::Styled {
+                        children: vec![InlineSegment::Text("inner")],
+                        emphasis: Emphasis::Italic,
+                    },
+                    InlineSegment::Text(" outer"),
+                ],
+                emphasis: Emphasis::Bold,
+            }]
         );
     }
 }

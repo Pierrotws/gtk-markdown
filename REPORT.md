@@ -1,0 +1,506 @@
+# gtk-markdown — Code Review Report
+
+A full review of the crate as of the current `main`. Findings are grouped by
+area and tagged with severity:
+
+- **Critical** — incorrect output for plausible inputs, or a safety hazard.
+- **High** — visible bug or significant API/architecture concern that will
+  bite users.
+- **Medium** — quality issue worth fixing soon.
+- **Low** — polish, micro-optimization, or future-proofing.
+
+## Tooling status
+
+- `cargo test` — 18/18 pass.
+- `cargo clippy --all-targets` — clean at the default lint level.
+- `cargo clippy -- -W clippy::pedantic` — 5 warnings (cosmetic; itemized in
+  §6.4).
+- `cargo doc --no-deps` — builds without warnings.
+- `cargo build --example window` — clean.
+
+The crate compiles and runs. Most findings below are about behaviour you'll
+notice once you push real Markdown through the renderer, not about
+build-blocking bugs.
+
+All four **High** findings (§1.1, §1.2, §1.3, §2.1) have been resolved; see
+the per-section status notes below.
+
+---
+
+## 1. Correctness — parser
+
+### 1.1 Multi-line block quotes don't merge — **High** — *Resolved*
+**Location (was):** `src/parser.rs:82–86`
+
+Each `> ...` line used to become a separate `Quote` block. A 3-line quote
+rendered as three independent italic paragraphs with no visual grouping.
+
+**Fix applied:** `markdown_blocks` now accumulates consecutive `>`-prefixed
+lines into a single `MarkdownBlock::Quote(String)`, joined by spaces (soft
+newlines like paragraphs). The leading marker accepts both `> ` and `>`
+(per CommonMark). Covered by `merges_consecutive_quote_lines` and
+`separates_quotes_split_by_blank_line`.
+
+### 1.2 No backslash escapes — **High** — *Resolved*
+**Location (was):** `src/parser.rs:154` (and parsing helpers below it)
+
+`\*not italic\*`, `\[not a link\]`, etc. used to parse as if the
+backslashes weren't there.
+
+**Fix applied:** `parse_inline_segments` now checks for a leading `\`
+followed by an ASCII-punctuation char and emits that char as a literal text
+segment, skipping both bytes. `\` is also part of the `next_special` set so
+text walks split before an escape rather than swallowing it. Covered by
+`backslash_escapes_punctuation` and `backslash_before_non_punctuation_is_kept`.
+
+### 1.3 Nested emphasis doesn't recurse — **High** — *Resolved*
+**Location (was):** `src/parser.rs:154–219`, `src/render.rs:46–57`
+
+Inline segments held `&str`, not nested children, so any inline structure
+inside emphasis rendered as literal text.
+
+**Fix applied:** `InlineSegment::Styled` now carries
+`children: Vec<InlineSegment<'a>>` instead of a `&str`. `parse_emphasis`
+recursively parses inner text through `parse_inline_segments`. The renderer
+walks children and composes nested emphasis via a new `combine_emphasis`
+(Bold + Italic = BoldItalic, etc.). Inline code, links, and images inside
+emphasis now render as their own widgets rather than being escaped. Covered
+by `nested_emphasis_recurses` and `combines_nested_emphasis`.
+
+Note: the existing `parse_emphasis` still picks the first matching closer
+greedily — runs of three+ `*` against an outer `**` (e.g.
+`**bold and *italic***`) still get truncated by one `*` because of that. A
+proper CommonMark delimiter run / left-flanking / right-flanking pass is
+out of scope for this fix; the recursion change unlocks the easy nesting
+cases (`**outer *inner* outer**`).
+
+### 1.4 Emphasis allows internal whitespace — **Medium**
+**Location:** `src/parser.rs:221–245`
+
+`* not italic *` parses as italic ` not italic `. CommonMark requires that
+the run-start delimiter is *not* followed by whitespace (and vice-versa
+for run-end), specifically to keep prose like "use `*` for multiplication
+and `*` for pointers" from collapsing into a single italic span across the
+sentence.
+
+**Fix:** in `parse_emphasis`, reject when `value[token_len..].starts_with(char::is_whitespace)`
+or when the byte before `inner_end` is whitespace.
+
+### 1.5 Link/image URI truncates at the first `)` — **Medium**
+**Location:** `src/parser.rs:269–281`
+
+```rust
+let uri_end = value[uri_start..].find(')')? + uri_start;
+```
+
+`[link](https://example.com/path(1))` truncates the URI to
+`https://example.com/path(1`. CommonMark handles this either via balanced
+parens or `\)` escapes.
+
+**Fix:** scan for a balanced `)`, or accept `\)` as an escaped paren inside
+the URI. For an MVP, balanced parens are easier (track a depth counter).
+
+### 1.6 Empty alt text rejects valid images — **Low**
+**Location:** `src/parser.rs:269–281` (via `parse_link`)
+
+`parse_link` returns `None` when `label.is_empty()`. `parse_image` reuses
+that, so `![](logo.png)` — a perfectly valid image with empty alt — falls
+through to text. Pure-decorative images can't be expressed.
+
+**Fix:** in `parse_image`, allow empty alt; only `parse_link` should keep
+the empty-label rejection (an empty link label is semantically odd).
+
+### 1.7 Indented code-fence inside a code block — **Low**
+**Location:** `src/parser.rs:51–60`
+
+```rust
+let trimmed = line.trim_start();
+if trimmed.starts_with("```") { ... }
+```
+
+The check runs *before* `if in_code_block { ... }`, and uses `trim_start`.
+A code-block line that happens to begin with whitespace + ``` will close
+the fence. CommonMark only closes on an *unindented* (≤3 spaces) match.
+
+**Fix:** when `in_code_block`, only close on an unindented (or matching
+indent) ` ``` `.
+
+### 1.8 No setext headings, hr, autolinks, tables, strikethrough, ref-style links — **Low**
+**Location:** parser overall.
+
+Documented as out-of-scope in the Cargo description ("subset of Markdown"),
+but worth surfacing for users picking this crate. Notably **horizontal
+rules** (`---` / `***`) silently render as a paragraph of literal
+asterisks/hyphens.
+
+---
+
+## 2. Correctness — renderer
+
+### 2.1 List items are not grouped — **High** — *Resolved*
+**Location (was):** `src/render.rs:22–27`
+
+Every list item used to become a top-level FlowBox sibling of the
+surrounding paragraphs, with no list container.
+
+**Fix applied:** the parser's `UnorderedListItem` / `OrderedListItem` block
+variants are replaced by a single
+`MarkdownBlock::List { ordered: bool, start: u32, items: Vec<String> }`.
+`markdown_blocks` accumulates consecutive items of the same kind into one
+`List` block (and starts a new one on a kind change or on an intervening
+paragraph/heading/quote/code). The renderer's new `list_box` produces a
+vertical `gtk::Box` whose children are the per-item `inline_flow` rows
+prefixed with their marker (`•` or `N.` numbered from `start`). Covered by
+`groups_consecutive_unordered_list_items` and
+`ordered_and_unordered_lists_split`.
+
+Nested lists are still out of scope: an indented `- nested` line is parsed
+as a sibling item rather than a sub-list. That requires the parser to
+track per-line indentation, which is a separate change.
+
+### 2.2 FlowBox is being used as a text-flow container — **Medium / Architecture**
+**Location:** `src/render.rs:33–57`
+
+`gtk::FlowBox` arranges children in a *grid* (children fit horizontally up
+to `max_children_per_line`, then wrap to a new row). Each inline run is a
+separate child, so:
+
+- **Word spacing is `column_spacing(4)`** instead of natural Pango
+  inter-word spacing — close to one ASCII space at 11pt sans-serif, but
+  doesn't track font size or the actual space-glyph width.
+- **Selection cannot cross children.** Each emphasis run / link / code
+  span is its own selectable label; users can't select a phrase that
+  spans `*foo* bar`.
+- **Wrapping happens at child boundaries**, not within paragraphs, so a
+  very long single-segment paragraph and one with many small segments
+  wrap differently for the same visual width.
+- **Justification, hyphenation, `text-wrap` modes** — none of these can
+  be applied across the inline run.
+
+This is a deliberate-looking decision (it lets framed inline code and
+images live alongside text), but it puts a ceiling on text quality. The
+common alternative is "build one Pango-marked-up `gtk::Label` per run of
+homogeneous text/links/emphasis, only break out widgets for things that
+genuinely need to be widgets (framed code, images)."
+
+**Fix:** for emphasis-only and link-only spans, accumulate Pango markup
+into a single `Label` and only insert separate widgets for `Code` and
+`Image` segments. Use a horizontal `Box` with children that are mostly
+single-paragraph Labels to preserve in-paragraph wrapping inside Pango.
+
+### 2.3 `Picture` has no size constraint — **Medium**
+**Location:** `src/render.rs:59–71` (`picture_from_src`)
+
+A 4000×3000 PNG will request 4000×3000 in the FlowBox; nothing bounds it.
+Combined with the FlowBox host, this can produce an enormous widget that
+forces the parent `ScrolledWindow` into pathological layouts (or grows
+the window past the screen).
+
+**Fix:** at minimum, `picture.set_content_fit(gtk::ContentFit::Contain)`
+and either a max `set_size_request(-1, max_height)` or a wrapping `Frame`
+that constrains via CSS `max-width`.
+
+### 2.4 Image source is resolved against the process CWD — **Medium**
+**Location:** `src/render.rs:62–67`
+
+`std::path::Path::new(src)` is interpreted relative to the *process
+working directory*, not relative to the document the markdown came from.
+Most renderers resolve relative paths against the document path, which
+this widget has no way to know about.
+
+**Fix:** add a `set_base_path(&self, base: Option<&Path>)` API; when
+present, join it with relative `src` before checking. Document the
+fallback behaviour either way.
+
+### 2.5 Synchronous I/O on the GTK main thread — **Medium**
+**Location:** `src/render.rs:62–67`
+
+`Path::is_file()` stats the disk, then `Picture::for_filename` decodes the
+image, both on the GTK main thread, both inside `set_markdown`. For local
+SVGs / small PNGs this is fine; for slow disks or large images it will
+freeze the UI. Re-rendering a large document with multiple images
+multiplies the cost.
+
+**Fix:** load images asynchronously (`Picture::for_file` + a `gio::File`
+with async streaming, or `gtk::Picture::set_paintable` from a background
+thread). At minimum, document the synchronous behaviour.
+
+### 2.6 `set_markdown` always rebuilds from scratch — **Medium**
+**Location:** `src/imp.rs:32–38`, `src/render.rs:9–31`
+
+Every call clears all children and re-creates every widget tree, even if
+the new markdown differs by one character. This makes a typing-driven
+preview noticeably janky for non-trivial documents (each keystroke
+destroys/recreates dozens of widgets). It also drops scroll position,
+selection, focus.
+
+**Fix:** an incremental diff is a big change. A cheaper intermediate is to
+*not* destroy children when the new markdown equals the cached value
+(currently it still rebuilds — `set_markdown` doesn't compare). Add an
+early-return on equality.
+
+### 2.7 Heading link styling has a bug, code links go unstyled — **Low**
+**Location:** `src/render.rs:169–185`
+
+`link_label` applies `style_markup` to the `<a>...</a>` markup, which for
+`InlineStyle::Heading` wraps it in `<b>`. That works. But `style_markup`
+does *not* reapply the `title-N` CSS class wrapping — and inside a code
+context (none yet) this would silently drop styling. More concretely:
+heading links get bolded but don't inherit the heading font *size* unless
+the CSS class is set on the same Label, which the function does do
+(`label.add_css_class(&heading_css_class(level))`). OK in practice; flagged
+because the relationship between Pango markup and CSS classes is fragile.
+
+**Fix (long-term):** unify the styling path so that "this label belongs to
+heading level N" is a single decision, not duplicated between
+`add_css_class` and `style_markup`.
+
+### 2.8 `style_markup` returns `String` for the `Normal` no-op — **Low**
+**Location:** `src/render.rs:90–96`
+
+```rust
+match style {
+    InlineStyle::Normal => markup,
+    ...
+}
+```
+
+`markup` is already a `String`; the function takes ownership and returns
+it back in the `Normal` arm. Fine, just allocating one extra `String`
+unnecessarily in the call chain. `Cow<str>` would be cleaner. Micro.
+
+---
+
+## 3. API design
+
+### 3.1 No GObject properties — **Medium**
+**Location:** `src/imp.rs`, `src/lib.rs`
+
+Modern gtk-rs uses `#[glib::Properties]` to expose fields as GObject
+properties. The current impl has bare `RefCell<String>` and
+`Cell<u32>` and a hand-rolled setter. As-is, you can't:
+
+- Bind `markdown` to another widget via `bind_property`.
+- Set the property from a `.ui` file / GtkBuilder.
+- Connect to `notify::markdown` from outside.
+
+**Fix:** derive `glib::Properties` for `markdown` and
+`heading-level-offset`. This also subsumes the manual "no-op if equal"
+guard.
+
+### 3.2 `set_heading_level_offset` rebuilds even when markdown is empty — **Low**
+**Location:** `src/lib.rs:53–60`
+
+```rust
+pub fn set_heading_level_offset(&self, offset: u32) {
+    if self.imp().heading_level_offset.get() == offset { return; }
+    self.imp().heading_level_offset.set(offset);
+    let text = self.markdown();
+    self.set_markdown(&text);
+}
+```
+
+When `text` is empty, `set_markdown("")` still does
+`clear_box` + `render_into("")`. Cheap but needless.
+
+**Fix:** skip the rebuild if `markdown.borrow().is_empty()`.
+
+### 3.3 `imp::set_markdown` takes a redundant `obj` parameter — **Low**
+**Location:** `src/imp.rs:32`
+
+```rust
+pub fn set_markdown(&self, obj: &super::MarkdownTextView, text: &str) {
+    let container: &gtk::Box = obj.upcast_ref();
+    ...
+}
+```
+
+`self.obj()` would give the same result — passing it from `lib.rs` is
+unidiomatic and invites mismatched-`obj` bugs in callers.
+
+**Fix:** drop the parameter, use `self.obj()` internally.
+
+### 3.4 No way to override link click behaviour — **Low**
+
+Links rely on `gtk::Label`'s default `activate-link` handler, which goes
+through `gio::AppInfo::launch_default_for_uri`. Apps embedding this widget
+inside a wiki-like environment can't intercept clicks (e.g., to navigate
+in-app for `app://...` URIs).
+
+**Fix:** expose a public `connect_link_activated` style signal (or wrap
+each link's `activate-link` and forward).
+
+### 3.5 No accessor for the parsed AST — **Low**
+
+The internal `parser` module is `pub(crate)`. Consumers who want to render
+their own way (or operate on the AST) have to re-parse with a different
+crate. Worth considering whether `MarkdownBlock` and `InlineSegment` should
+be public.
+
+---
+
+## 4. Performance
+
+### 4.1 N labels per paragraph — **Medium**
+
+Already covered in §2.2. Each emphasis/link/code segment instantiates a
+fresh `gtk::Label` (sometimes wrapped in a `gtk::Frame`). For prose-heavy
+documents that's tens of widgets per paragraph, hundreds per page.
+
+### 4.2 Multi-line code blocks are O(lines) FlowBoxes — **Medium**
+**Location:** `src/render.rs:111–124`
+
+```rust
+for line in text.lines() {
+    block.append(&code_flow(line));
+}
+```
+
+A 200-line code block creates 200 FlowBoxes, each containing one Label.
+A single `Label` with `font_family="monospace"` and the code as content
+would do the same job with one widget.
+
+**Fix:** render the code block as one `gtk::Label` with monospace markup,
+inside the existing `gtk::Frame`. Selection across lines becomes a freebie.
+
+### 4.3 `escape_markup` always allocates — **Low**
+**Location:** `src/render.rs:191–193`
+
+`glib::markup_escape_text` returns a `GString`; the helper unconditionally
+clones it via `.to_string()`. Fine, but a frequently-hit allocation.
+
+---
+
+## 5. Test coverage
+
+### 5.1 No tests for `MarkdownBlock::Quote` — **Medium** — *Partly addressed*
+
+`parses_structural_markdown_blocks` covers heading + lists; quote parsing
+was previously exercised nowhere. The §1.1 fix added
+`merges_consecutive_quote_lines` and `separates_quotes_split_by_blank_line`,
+so single- and multi-line quote behaviour is now pinned. Edge cases (mixed
+`> ` vs `>` markers, `>` inside other blocks) still aren't covered.
+
+### 5.2 No render-pipeline tests — **Low**
+
+All render tests are micro-tests of helper functions
+(`display_text_segment`, `heading_css_class`, `styled_text_markup`).
+End-to-end tests that build a `MarkdownTextView` and inspect its widget
+tree are possible (gtk-rs supports headless testing via
+`gtk::init` in a test binary on a system with X/Wayland or `Xvfb`), but
+not a free-roll. At minimum, add a test that calls
+`render_into(&fake_box, "...")` and asserts the resulting child types.
+
+### 5.3 No tests for edge cases — **Low**
+
+Suggested additions:
+
+- CRLF line endings (`value.lines()` already strips `\r\n`, so probably
+  fine, but worth pinning).
+- Empty input.
+- A code block at end-of-input without a closing fence.
+- An unmatched emphasis delimiter (`**foo`).
+- A heading with inline emphasis (`# Hello *world*`).
+
+---
+
+## 6. Polish & style
+
+### 6.1 Missing `#[must_use]` on accessors — **Low**
+**Location:** `src/lib.rs:27, 37, 48` (clippy `must_use_candidate`)
+
+`new()`, `markdown()`, `heading_level_offset()` are pure value-returning
+methods.
+
+### 6.2 Missing `;` on a `match` arm — **Low**
+**Location:** `src/render.rs:49` (clippy `semicolon_if_nothing_returned`)
+
+```rust
+InlineSegment::Styled { text, emphasis } => {
+    append_text_segment(&flow, text, emphasis, style)
+},
+```
+
+The trailing expression has unit type — convention is to terminate with
+`;` so the arm is a statement.
+
+### 6.3 Doc-comment backtick parity — **Low**
+**Location:** `src/parser.rs:3–7` (clippy `doc_markdown`)
+
+The fenced-code mention `\`\`\`` confuses clippy's parser. Either escape
+differently or `#[allow(clippy::doc_markdown)]` on the module.
+
+### 6.4 Magic numbers in the renderer — **Low**
+
+`set_max_children_per_line(1000)`, `set_column_spacing(4)`,
+`set_row_spacing(2)`, frame margins of `2` / `6` / `8`. None are
+self-describing and a reader has to infer intent. A short named constant
+or one-line comment for each would help. (Per the project's "comments
+only when WHY is non-obvious" rule, the column-spacing-vs-Pango-spacing
+choice in particular deserves a `// Approximates a space at 11pt` note.)
+
+### 6.5 `Cargo.toml` — no `rust-version` — **Low**
+
+Declaring an MSRV avoids surprise breakage for downstream users on older
+toolchains.
+
+### 6.6 README install snippet uses git dep — **Low**
+**Location:** `README.md` "Installation" section.
+
+Once published, `gtk-markdown = "0.1"` is friendlier than a `git = ...`
+dependency.
+
+---
+
+## 7. Recommended priority order
+
+If the goal is "make this widget pleasant to use in a real app," I'd
+tackle in roughly this order:
+
+1. ~~**§2.2 + §1.3 — Inline rendering rewrite.**~~ §1.3 done (nested
+   emphasis recurses). §2.2 (FlowBox-vs-Pango) still open and is the
+   biggest visual-quality lever.
+2. ~~**§2.1 + §1.1 — Lists and block quotes.**~~ Both done.
+3. ~~**§1.2** + §1.4 + §1.5 — Inline parser correctness.~~ §1.2 done;
+   whitespace-bounded emphasis (§1.4) and balanced parens in URIs
+   (§1.5) remain.
+4. **§2.3 + §2.4 + §2.5 — Image robustness.** Size constraints, base-path
+   API, async loading.
+5. **§3.1 — `glib::Properties` derive.** Brings the widget in line with
+   gtk-rs idioms; cheap once you're already touching `imp.rs`.
+6. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
+   addition, near-zero risk. (§5.1 quote tests landed with the §1.1 fix.)
+7. Everything else (polish, micro-perf, optional features).
+
+---
+
+## 8. What works well
+
+To balance the above, the things this codebase already does right:
+
+- **Module boundaries are clean.** `parser` produces tokens, `render`
+  consumes them, `imp` glues to GObject. Each module has a single
+  responsibility and the tests live next to the code under test.
+- **GObject subclass setup is correct.** The wrapper macro, the
+  `ObjectSubclass` impl, the `BoxImpl`/`WidgetImpl` empty impls, and the
+  `constructed` orientation set are all idiomatic.
+- **Pango-markup escaping is consistent.** Every place that builds markup
+  goes through `escape_markup` — no XSS-style hole through a stray
+  formatter.
+- **Tests are tight and readable.** They assert structural equality of
+  `Vec<MarkdownBlock>` / `Vec<InlineSegment>`, which is exactly the right
+  level of granularity for a parser of this size.
+- **The `heading_level_offset` knob is a thoughtful touch.** Embedding the
+  view inside a container that already styles its children as a heading is
+  a real use case, and the offset solves it without forcing the user to
+  rewrite their markdown.
+- **The image fallback is graceful.** Missing files / remote URLs degrade
+  to an italic `[image: alt]` placeholder rather than silently failing or
+  panicking.
+- **No `unwrap`/`expect`/`panic!` on input paths.** The parser handles
+  malformed input by emitting plain text, which is the right behaviour
+  for a "best-effort renderer."
+
+---
+
+*Generated for the state of `main` as of this review.*
