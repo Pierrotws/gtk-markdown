@@ -200,19 +200,6 @@ that returning `true` inhibits the default handler.
 
 ## 5. Project hygiene
 
-### 5.1 No CI configuration — **Low**
-
-No `.github/workflows/`. For a soon-to-be-published crate, even a
-minimal `cargo fmt --check && cargo clippy --all-targets -- -D warnings
-&& cargo test` workflow would pin quality.
-
-### 5.2 No `CHANGELOG.md` — **Low**
-
-The git log carries the per-section work, but a
-[Keep-a-Changelog](https://keepachangelog.com/) `CHANGELOG.md` is the
-expected first-stop document for downstream users tracking 0.1 → 0.2
-behaviour shifts.
-
 ### 5.3 Example doesn't showcase `set_base_path` or `connect_link_activated` — **Low**
 
 `examples/window.rs` builds an absolute path via `CARGO_MANIFEST_DIR`,
@@ -252,10 +239,9 @@ None block CI. Worth one consolidated "polish" pass when convenient.
 
 ## 7. Recommended priority order
 
-1. **§5.1 + §5.2 — CI + CHANGELOG.** Pre-publish polish.
-2. **§1.3 — Real CommonMark delimiter-run pass.** Largest correctness
+1. **§1.3 — Real CommonMark delimiter-run pass.** Largest correctness
    gap left in inline parsing; non-trivial.
-3. **Everything else** — micro-perf, missing CommonMark features
+2. **Everything else** — micro-perf, missing CommonMark features
    (§1.5–§1.8), pedantic lints (§6).
 
 ---
