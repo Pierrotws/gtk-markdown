@@ -196,8 +196,14 @@ fn combined_label(
     label.set_use_markup(true);
     label.set_markup(&style_markup(markup, style));
     if has_link {
-        let view = view.clone();
+        // WeakRef breaks the View → FlowBox → Label → closure → View cycle
+        // that would otherwise pin the View (and every child widget) until
+        // the next set_markdown clears the children.
+        let view = view.downgrade();
         label.connect_activate_link(move |_label, uri| {
+            let Some(view) = view.upgrade() else {
+                return glib::Propagation::Proceed;
+            };
             let stop = view.emit_link_activated(uri);
             if stop {
                 glib::Propagation::Stop
