@@ -1,6 +1,8 @@
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
+use gtk::glib::subclass::Signal;
 use gtk::{glib, prelude::*, subclass::prelude::*};
 
 use crate::render;
@@ -29,6 +31,16 @@ impl ObjectImpl for MarkdownTextView {
     fn constructed(&self) {
         self.parent_constructed();
         self.obj().set_orientation(gtk::Orientation::Vertical);
+    }
+
+    fn signals() -> &'static [Signal] {
+        static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+        SIGNALS.get_or_init(|| {
+            vec![Signal::builder("link-activated")
+                .param_types([String::static_type()])
+                .return_type::<bool>()
+                .build()]
+        })
     }
 }
 
@@ -66,6 +78,7 @@ impl MarkdownTextView {
         let base = self.base_path.borrow();
         render::render_into(
             container,
+            &obj,
             text,
             self.heading_level_offset.get(),
             base.as_deref(),

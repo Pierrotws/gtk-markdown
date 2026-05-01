@@ -8,9 +8,11 @@ use gtk::{glib, prelude::*};
 use crate::parser::{
     markdown_blocks, parse_inline_segments, Emphasis, InlineSegment, InlineStyle, MarkdownBlock,
 };
+use crate::MarkdownTextView;
 
 pub(crate) fn render_into(
     container: &gtk::Box,
+    view: &MarkdownTextView,
     value: &str,
     heading_level_offset: u32,
     base_path: Option<&Path>,
@@ -18,11 +20,12 @@ pub(crate) fn render_into(
     for block in markdown_blocks(value) {
         match block {
             MarkdownBlock::Paragraph(text) => {
-                container.append(&inline_flow(&text, InlineStyle::Normal, None, base_path));
+                container.append(&inline_flow(view, &text, InlineStyle::Normal, None, base_path));
             }
             MarkdownBlock::Heading { level, text } => {
                 let css_level = level.saturating_add(heading_level_offset as usize);
                 container.append(&inline_flow(
+                    view,
                     &text,
                     InlineStyle::Heading(css_level),
                     None,
@@ -30,10 +33,10 @@ pub(crate) fn render_into(
                 ));
             }
             MarkdownBlock::Quote(text) => {
-                container.append(&inline_flow(&text, InlineStyle::Quote, None, base_path));
+                container.append(&inline_flow(view, &text, InlineStyle::Quote, None, base_path));
             }
             MarkdownBlock::List { ordered, start, items } => {
-                container.append(&list_box(ordered, start, &items, base_path));
+                container.append(&list_box(view, ordered, start, &items, base_path));
             }
             MarkdownBlock::Code(code) => container.append(&code_block_frame(&code)),
             MarkdownBlock::HorizontalRule => {
@@ -43,7 +46,13 @@ pub(crate) fn render_into(
     }
 }
 
-fn list_box(ordered: bool, start: u32, items: &[String], base_path: Option<&Path>) -> gtk::Box {
+fn list_box(
+    view: &MarkdownTextView,
+    ordered: bool,
+    start: u32,
+    items: &[String],
+    base_path: Option<&Path>,
+) -> gtk::Box {
     let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     for (offset, item) in items.iter().enumerate() {
         let marker = if ordered {
@@ -51,12 +60,13 @@ fn list_box(ordered: bool, start: u32, items: &[String], base_path: Option<&Path
         } else {
             "•".to_string()
         };
-        outer.append(&inline_flow(item, InlineStyle::Normal, Some(&marker), base_path));
+        outer.append(&inline_flow(view, item, InlineStyle::Normal, Some(&marker), base_path));
     }
     outer
 }
 
 fn inline_flow(
+    view: &MarkdownTextView,
     text: &str,
     style: InlineStyle,
     marker: Option<&str>,
@@ -74,6 +84,7 @@ fn inline_flow(
     }
 
     render_inline_segments(
+        view,
         &flow,
         parse_inline_segments(text),
         Emphasis::Normal,
@@ -85,6 +96,7 @@ fn inline_flow(
 }
 
 fn render_inline_segments(
+    view: &MarkdownTextView,
     flow: &gtk::FlowBox,
     segments: Vec<InlineSegment<'_>>,
     base_emphasis: Emphasis,
@@ -92,13 +104,26 @@ fn render_inline_segments(
     base_path: Option<&Path>,
 ) {
     let mut buffer = String::new();
-    accumulate_inline_segments(flow, &mut buffer, segments, base_emphasis, style, base_path);
-    flush_text_buffer(flow, &mut buffer, style);
+    let mut has_link = false;
+    accumulate_inline_segments(
+        view,
+        flow,
+        &mut buffer,
+        &mut has_link,
+        segments,
+        base_emphasis,
+        style,
+        base_path,
+    );
+    flush_text_buffer(view, flow, &mut buffer, &mut has_link, style);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn accumulate_inline_segments(
+    view: &MarkdownTextView,
     flow: &gtk::FlowBox,
     buffer: &mut String,
+    has_link: &mut bool,
     segments: Vec<InlineSegment<'_>>,
     base_emphasis: Emphasis,
     style: InlineStyle,
@@ -112,9 +137,12 @@ fn accumulate_inline_segments(
             }
             InlineSegment::Styled { children, emphasis } => {
                 let composed = combine_emphasis(base_emphasis, emphasis);
-                accumulate_inline_segments(flow, buffer, children, composed, style, base_path);
+                accumulate_inline_segments(
+                    view, flow, buffer, has_link, children, composed, style, base_path,
+                );
             }
             InlineSegment::Link { label, uri } => {
+                *has_link = true;
                 let link = format!(
                     "<a href=\"{}\">{}</a>",
                     escape_markup(uri),
@@ -123,11 +151,11 @@ fn accumulate_inline_segments(
                 buffer.push_str(&apply_emphasis_markup(&link, base_emphasis));
             }
             InlineSegment::Code(text) => {
-                flush_text_buffer(flow, buffer, style);
+                flush_text_buffer(view, flow, buffer, has_link, style);
                 flow.insert(&inline_code_frame(text), -1);
             }
             InlineSegment::Image { alt, src } => {
-                flush_text_buffer(flow, buffer, style);
+                flush_text_buffer(view, flow, buffer, has_link, style);
                 match picture_from_src(src, base_path) {
                     Some(picture) => flow.insert(&picture, -1),
                     None => flow.insert(&image_fallback_label(alt), -1),
@@ -137,15 +165,27 @@ fn accumulate_inline_segments(
     }
 }
 
-fn flush_text_buffer(flow: &gtk::FlowBox, buffer: &mut String, style: InlineStyle) {
+fn flush_text_buffer(
+    view: &MarkdownTextView,
+    flow: &gtk::FlowBox,
+    buffer: &mut String,
+    has_link: &mut bool,
+    style: InlineStyle,
+) {
     let trimmed = buffer.trim();
     if !trimmed.is_empty() {
-        flow.insert(&combined_label(trimmed, style), -1);
+        flow.insert(&combined_label(view, trimmed, *has_link, style), -1);
     }
     buffer.clear();
+    *has_link = false;
 }
 
-fn combined_label(markup: &str, style: InlineStyle) -> gtk::Label {
+fn combined_label(
+    view: &MarkdownTextView,
+    markup: &str,
+    has_link: bool,
+    style: InlineStyle,
+) -> gtk::Label {
     let label = gtk::Label::new(None);
     label.set_wrap(true);
     label.set_xalign(0.0);
@@ -155,6 +195,17 @@ fn combined_label(markup: &str, style: InlineStyle) -> gtk::Label {
     }
     label.set_use_markup(true);
     label.set_markup(&style_markup(markup, style));
+    if has_link {
+        let view = view.clone();
+        label.connect_activate_link(move |_label, uri| {
+            let stop = view.emit_link_activated(uri);
+            if stop {
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        });
+    }
     label
 }
 

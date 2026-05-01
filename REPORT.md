@@ -25,16 +25,6 @@ purged from this report as they land. Commit history carries the details.
 
 ## 3. API design
 
-### 3.4 No way to override link click behaviour — **Low**
-
-Links rely on `gtk::Label`'s default `activate-link` handler, which goes
-through `gio::AppInfo::launch_default_for_uri`. Apps embedding this widget
-inside a wiki-like environment can't intercept clicks (e.g., to navigate
-in-app for `app://...` URIs).
-
-**Fix:** expose a public `connect_link_activated` style signal (or wrap
-each link's `activate-link` and forward).
-
 ---
 
 ## 5. Test coverage

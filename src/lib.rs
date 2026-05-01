@@ -12,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
+use gtk::glib::prelude::*;
 use gtk::{glib, subclass::prelude::*};
 
 mod imp;
@@ -59,5 +60,26 @@ impl MarkdownTextView {
             return;
         }
         self.imp().rebuild(&text);
+    }
+
+    /// Connects a callback that fires when the user clicks a Markdown link.
+    ///
+    /// The callback receives the link's URI and returns `true` to stop the
+    /// default behaviour (`gio::AppInfo::launch_default_for_uri`) or
+    /// `false` to let it proceed. Useful for in-app routing (e.g.
+    /// `app://...` URIs) or analytics on outbound clicks.
+    pub fn connect_link_activated<F>(&self, f: F) -> glib::SignalHandlerId
+    where
+        F: Fn(&Self, &str) -> bool + 'static,
+    {
+        self.connect_local("link-activated", false, move |args| {
+            let view = args[0].get::<Self>().expect("self argument");
+            let uri = args[1].get::<String>().expect("uri argument");
+            Some(f(&view, &uri).to_value())
+        })
+    }
+
+    pub(crate) fn emit_link_activated(&self, uri: &str) -> bool {
+        self.emit_by_name::<bool>("link-activated", &[&uri.to_string()])
     }
 }
