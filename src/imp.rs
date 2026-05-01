@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -44,6 +45,17 @@ impl ObjectImpl for MarkdownTextView {
             vec![Signal::builder("link-activated")
                 .param_types([String::static_type()])
                 .return_type::<bool>()
+                // First handler that returns `true` wins; later handlers
+                // don't run. Without this, the default GLib accumulator
+                // would silently overwrite the first handler's verdict
+                // with whatever the last handler returned.
+                .accumulator(|_hint, _acc, value| {
+                    if value.get::<bool>().unwrap_or(false) {
+                        ControlFlow::Break(true.to_value())
+                    } else {
+                        ControlFlow::Continue(false.to_value())
+                    }
+                })
                 .build()]
         })
     }

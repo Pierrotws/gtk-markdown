@@ -70,6 +70,10 @@ impl MarkdownTextView {
     /// default behaviour (`gio::AppInfo::launch_default_for_uri`) or
     /// `false` to let it proceed. Useful for in-app routing (e.g.
     /// `app://...` URIs) or analytics on outbound clicks.
+    ///
+    /// When multiple handlers are connected, the *first* handler that
+    /// returns `true` wins and later handlers are not invoked. Order
+    /// follows the GLib connection order.
     pub fn connect_link_activated<F>(&self, f: F) -> glib::SignalHandlerId
     where
         F: Fn(&Self, &str) -> bool + 'static,

@@ -28,36 +28,6 @@ quality-of-life.
 
 ## 1. Correctness
 
-### 1.2 `connect_link_activated` accumulator is "last wins" — **Medium**
-**Location:** `src/imp.rs:36–44` (signal definition), `src/lib.rs:73–82`.
-
-The `link-activated` signal is built with the default GLib accumulator,
-which returns the *last* connected handler's `bool`. That's fine for a
-single subscriber (the typical case) but surprising for "intercept"
-semantics: with two connected handlers, the second one's return value
-wins regardless of the first's intent. Apps building modular routing
-on top of this signal will hit confusing precedence bugs.
-
-**Fix:** add a custom accumulator that stops at the first `true`:
-
-```rust
-Signal::builder("link-activated")
-    .param_types([String::static_type()])
-    .return_type::<bool>()
-    .accumulator(|_hint, acc, value| {
-        let handled = value.get::<bool>().unwrap_or(false);
-        if handled {
-            *acc = true.to_value();
-            false   // stop further handlers
-        } else {
-            true    // keep going
-        }
-    })
-    .build()
-```
-
-Document the precedence explicitly either way.
-
 ### 1.3 `parse_emphasis` greedy first-close still truncates triple-star runs — **Medium**
 **Location:** `src/parser.rs:352–388`.
 
@@ -298,14 +268,12 @@ None block CI. Worth one consolidated "polish" pass when convenient.
 
 ## 7. Recommended priority order
 
-1. **§1.2 — Custom accumulator for `link-activated`.** Pin first-true-wins
-   semantics before someone connects a second handler.
-2. **§2.1 — Add inter-block spacing / margin around hr.** Cosmetic but
+1. **§2.1 — Add inter-block spacing / margin around hr.** Cosmetic but
    cheap and obviously broken without it.
-3. **§5.1 + §5.2 — CI + CHANGELOG.** Pre-publish polish.
-4. **§1.3 — Real CommonMark delimiter-run pass.** Largest correctness
+2. **§5.1 + §5.2 — CI + CHANGELOG.** Pre-publish polish.
+3. **§1.3 — Real CommonMark delimiter-run pass.** Largest correctness
    gap left in inline parsing; non-trivial.
-5. **Everything else** — micro-perf, missing CommonMark features
+4. **Everything else** — micro-perf, missing CommonMark features
    (§1.5–§1.8), pedantic lints (§6).
 
 ---
