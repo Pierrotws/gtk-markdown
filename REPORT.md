@@ -92,19 +92,6 @@ into a single `Label` and only insert separate widgets for `Code` and
 `Image` segments. Use a horizontal `Box` with children that are mostly
 single-paragraph Labels to preserve in-paragraph wrapping inside Pango.
 
-### 2.5 Synchronous I/O on the GTK main thread — **Medium**
-**Location:** `src/render.rs:62–67`
-
-`Path::is_file()` stats the disk, then `Picture::for_filename` decodes the
-image, both on the GTK main thread, both inside `set_markdown`. For local
-SVGs / small PNGs this is fine; for slow disks or large images it will
-freeze the UI. Re-rendering a large document with multiple images
-multiplies the cost.
-
-**Fix:** load images asynchronously (`Picture::for_file` + a `gio::File`
-with async streaming, or `gtk::Picture::set_paintable` from a background
-thread). At minimum, document the synchronous behaviour.
-
 ### 2.7 Heading link styling has a bug, code links go unstyled — **Low**
 **Location:** `src/render.rs:169–185`
 
@@ -270,10 +257,9 @@ Remaining work, roughly in the order I'd tackle it:
 
 1. **§2.2 — Inline rendering rewrite (FlowBox → Pango Labels).**
    Biggest visual-quality lever. Subsumes §4.1.
-2. **§2.5 — Async image loading.**
-3. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
+2. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
    addition, near-zero risk.
-4. Everything else (polish, micro-perf, optional features).
+3. Everything else (polish, micro-perf, optional features).
 
 ---
 

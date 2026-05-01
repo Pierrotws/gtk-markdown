@@ -131,12 +131,30 @@ fn picture_from_src(src: &str, base_path: Option<&Path>) -> Option<gtk::Picture>
         return None;
     }
     install_picture_css_provider();
-    let picture = gtk::Picture::for_filename(&resolved);
+    let picture = gtk::Picture::new();
     picture.set_can_shrink(true);
     #[allow(deprecated)]
     picture.set_keep_aspect_ratio(true);
     picture.add_css_class(PICTURE_CSS_CLASS);
+    spawn_paintable_loader(&picture, resolved);
     Some(picture)
+}
+
+fn spawn_paintable_loader(picture: &gtk::Picture, path: std::path::PathBuf) {
+    use gtk::{gdk_pixbuf, gio};
+    let picture = picture.clone();
+    glib::spawn_future_local(async move {
+        let file = gio::File::for_path(&path);
+        let Ok(stream) = file.read_future(glib::Priority::default()).await else {
+            return;
+        };
+        let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_stream_future(&stream).await else {
+            return;
+        };
+        #[allow(deprecated)]
+        let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
+        picture.set_paintable(Some(&texture));
+    });
 }
 
 fn install_picture_css_provider() {
