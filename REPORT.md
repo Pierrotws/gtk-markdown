@@ -92,22 +92,6 @@ falls through to a paragraph. Same for `parse_ordered_list_item`.
 
 ## 2. Renderer / widgets
 
-### 2.1 Horizontal rule has no surrounding spacing — **Low**
-**Location:** `src/render.rs:42–44`.
-
-```rust
-MarkdownBlock::HorizontalRule => {
-    container.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-}
-```
-
-A `<hr>` rendered between two paragraphs touches both text blocks
-because the View's outer Box has no inter-child spacing. Visually a
-hairline jammed into adjacent prose.
-
-**Fix:** either set a top/bottom margin on the Separator, or set
-`spacing(N)` on the wrapper Box in `imp::constructed`.
-
 ### 2.2 `apply_emphasis_markup` always allocates — **Low**
 **Location:** `src/render.rs:322–329`.
 
@@ -268,12 +252,10 @@ None block CI. Worth one consolidated "polish" pass when convenient.
 
 ## 7. Recommended priority order
 
-1. **§2.1 — Add inter-block spacing / margin around hr.** Cosmetic but
-   cheap and obviously broken without it.
-2. **§5.1 + §5.2 — CI + CHANGELOG.** Pre-publish polish.
-3. **§1.3 — Real CommonMark delimiter-run pass.** Largest correctness
+1. **§5.1 + §5.2 — CI + CHANGELOG.** Pre-publish polish.
+2. **§1.3 — Real CommonMark delimiter-run pass.** Largest correctness
    gap left in inline parsing; non-trivial.
-4. **Everything else** — micro-perf, missing CommonMark features
+3. **Everything else** — micro-perf, missing CommonMark features
    (§1.5–§1.8), pedantic lints (§6).
 
 ---

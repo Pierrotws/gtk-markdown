@@ -40,7 +40,13 @@ pub(crate) fn render_into(
             }
             MarkdownBlock::Code(code) => container.append(&code_block_frame(&code)),
             MarkdownBlock::HorizontalRule => {
-                container.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+                let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
+                // The outer Box has no inter-child spacing, so without
+                // margins the Separator sits flush against neighbouring
+                // text and reads as a hairline jammed into prose.
+                separator.set_margin_top(HORIZONTAL_RULE_MARGIN_PX);
+                separator.set_margin_bottom(HORIZONTAL_RULE_MARGIN_PX);
+                container.append(&separator);
             }
         }
     }
@@ -228,6 +234,7 @@ fn combine_emphasis(outer: Emphasis, inner: Emphasis) -> Emphasis {
 
 const PICTURE_CSS_CLASS: &str = "gtk-markdown-picture";
 const MAX_PICTURE_HEIGHT_PX: u32 = 480;
+const HORIZONTAL_RULE_MARGIN_PX: i32 = 6;
 
 fn picture_from_src(
     view: &MarkdownTextView,
