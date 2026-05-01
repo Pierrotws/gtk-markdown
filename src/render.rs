@@ -38,7 +38,7 @@ pub(crate) fn render_into(
             MarkdownBlock::List { ordered, start, items } => {
                 container.append(&list_box(view, ordered, start, &items, base_path));
             }
-            MarkdownBlock::Code(code) => container.append(&code_block_frame(&code)),
+            MarkdownBlock::Code(code) => container.append(&code_block_label(&code)),
             MarkdownBlock::HorizontalRule => {
                 let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
                 // The outer Box has no inter-child spacing, so without
@@ -157,8 +157,10 @@ fn accumulate_inline_segments(
                 buffer.push_str(&apply_emphasis_markup(&link, base_emphasis));
             }
             InlineSegment::Code(text) => {
-                flush_text_buffer(view, flow, buffer, has_link, style);
-                flow.insert(&inline_code_frame(text), -1);
+                // Pure-Pango inline code: stays in the paragraph buffer so
+                // the surrounding text wraps around it instead of being
+                // interrupted by a separate FlowBox child.
+                buffer.push_str(&code_span_markup(text));
             }
             InlineSegment::Image { alt, src } => {
                 flush_text_buffer(view, flow, buffer, has_link, style);
@@ -357,44 +359,24 @@ fn apply_emphasis_markup(escaped: &str, emphasis: Emphasis) -> String {
     }
 }
 
-fn inline_code_frame(text: &str) -> gtk::Frame {
-    framed_widget(&code_label(text), false, 2, 6)
+// Pango span attributes used by both inline code and code blocks. The
+// background paints behind the glyphs only (Pango doesn't do padding), so
+// the highlight follows the text shape rather than a full rectangle.
+const CODE_SPAN_ATTRS: &str = "font_family=\"monospace\" background=\"#f0f0f0\"";
+
+fn code_span_markup(text: &str) -> String {
+    format!("<span {CODE_SPAN_ATTRS}>{}</span>", escape_markup(text))
 }
 
-fn code_block_frame(text: &str) -> gtk::Frame {
-    let label = code_label(text);
-    label.set_xalign(0.0);
-    framed_widget(&label, true, 8, 8)
-}
-
-fn framed_widget<W>(
-    child: &W,
-    hexpand: bool,
-    vertical_margin: i32,
-    horizontal_margin: i32,
-) -> gtk::Frame
-where
-    W: IsA<gtk::Widget>,
-{
-    child.set_margin_top(vertical_margin);
-    child.set_margin_bottom(vertical_margin);
-    child.set_margin_start(horizontal_margin);
-    child.set_margin_end(horizontal_margin);
-
-    let frame = gtk::Frame::new(None);
-    frame.set_hexpand(hexpand);
-    frame.set_child(Some(child));
-    frame
-}
-
-fn code_label(text: &str) -> gtk::Label {
+fn code_block_label(text: &str) -> gtk::Label {
     let label = gtk::Label::new(None);
     label.set_selectable(true);
     label.set_use_markup(true);
-    label.set_markup(&format!(
-        "<span font_family=\"monospace\">{}</span>",
-        escape_markup(text)
-    ));
+    label.set_xalign(0.0);
+    label.set_hexpand(true);
+    label.set_margin_top(4);
+    label.set_margin_bottom(4);
+    label.set_markup(&code_span_markup(text));
     label
 }
 
@@ -480,7 +462,7 @@ mod render_pipeline_tests {
 
         let code = MarkdownTextView::new();
         code.set_markdown("```\nfn x() {}\n```".to_string());
-        assert_eq!(child_types(&code), vec!["GtkFrame"]);
+        assert_eq!(child_types(&code), vec!["GtkLabel"]);
 
         let heading = MarkdownTextView::new();
         heading.set_markdown("# Title".to_string());
