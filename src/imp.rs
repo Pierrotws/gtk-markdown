@@ -17,6 +17,11 @@ pub struct MarkdownTextView {
     pub heading_level_offset: Cell<u32>,
 
     pub base_path: RefCell<Option<PathBuf>>,
+
+    // Bumped at the start of every rebuild. In-flight image loaders capture
+    // the value at spawn time and skip their set_paintable if they finish
+    // after a newer rebuild has started.
+    pub generation: Cell<u64>,
 }
 
 #[glib::object_subclass]
@@ -72,6 +77,7 @@ impl MarkdownTextView {
     }
 
     pub fn rebuild(&self, text: &str) {
+        self.generation.set(self.generation.get().wrapping_add(1));
         let obj = self.obj();
         let container: &gtk::Box = obj.upcast_ref();
         clear_box(container);

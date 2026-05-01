@@ -79,24 +79,6 @@ simple workaround for the runs that matter most: if the input has more
 heuristic: when a `**`/`__` close is the start of a longer run of the
 same char, prefer the *last* `**` in that run.
 
-### 1.4 Image loader has no cancellation on rebuild — **Medium**
-**Location:** `src/render.rs:248–263` (`spawn_paintable_loader`).
-
-`set_markdown` followed by another `set_markdown` while images are
-still loading leaves the in-flight `glib::spawn_future_local` tasks
-running. Each holds a `clone()` of its (now orphaned) `gtk::Picture`.
-The Pictures' parent FlowBox was dropped during `clear_box`, so they
-are no longer in the tree — but the future will still complete, decode
-the bytes, and call `set_paintable` on a widget nobody can see. Memory
-and CPU are wasted; for a typing-driven preview that re-renders on each
-keystroke the wasted decodes can pile up.
-
-**Fix:** thread a `gio::Cancellable` through the loader, store it on the
-View, and cancel + replace it on each rebuild. Or hook the Picture's
-"unmap" signal to abort. The simplest cut: a generation counter — pass
-the current generation into the future, and bail early if it doesn't
-match the View's current value.
-
 ### 1.5 Nested block quotes (`>>`) render as literal `>` — **Low**
 
 `parse_quote_line` strips one `>` and one optional space. `>> nested`
@@ -207,21 +189,17 @@ A line of named constants near the top of `render.rs` and a one-liner
 on `column_spacing(4)` ("approximates an inter-word space at 11pt sans")
 would help.
 
-### 2.6 Pending image loads keep stale Pictures alive — **Low**
-
-Already covered as part of §1.4 above; flagging here too because the
-fix is renderer-side (cancellable + drop guard).
-
 ---
 
 ## 3. API design
 
-### 3.1 No way to cancel or observe in-flight image loads — **Low**
+### 3.1 No way to observe in-flight image loads — **Low**
 
 Apps using a long-lived View as a markdown preview have no way to know
 "are images still loading?" or to wait for full render. Worth a
-`notify::loading` boolean property or a `loaded` signal once §1.4 is
-in place.
+`notify::loading` boolean property or a `loaded` signal. The generation
+counter from §1.4 already gives us cancellation semantics; this builds
+on it.
 
 ### 3.2 No `Display` / `From<&str>` / `From<String>` for `MarkdownTextView` — **Low**
 
@@ -320,16 +298,14 @@ None block CI. Worth one consolidated "polish" pass when convenient.
 
 ## 7. Recommended priority order
 
-1. **§1.4 — Cancel pending image loads on rebuild.** Avoids wasted work
-   under typing-driven previews and orphaned-widget churn.
-2. **§1.2 — Custom accumulator for `link-activated`.** Pin first-true-wins
+1. **§1.2 — Custom accumulator for `link-activated`.** Pin first-true-wins
    semantics before someone connects a second handler.
-3. **§2.1 — Add inter-block spacing / margin around hr.** Cosmetic but
+2. **§2.1 — Add inter-block spacing / margin around hr.** Cosmetic but
    cheap and obviously broken without it.
-4. **§5.1 + §5.2 — CI + CHANGELOG.** Pre-publish polish.
-5. **§1.3 — Real CommonMark delimiter-run pass.** Largest correctness
+3. **§5.1 + §5.2 — CI + CHANGELOG.** Pre-publish polish.
+4. **§1.3 — Real CommonMark delimiter-run pass.** Largest correctness
    gap left in inline parsing; non-trivial.
-6. **Everything else** — micro-perf, missing CommonMark features
+5. **Everything else** — micro-perf, missing CommonMark features
    (§1.5–§1.8), pedantic lints (§6).
 
 ---

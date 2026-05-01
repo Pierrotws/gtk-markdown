@@ -84,4 +84,8 @@ impl MarkdownTextView {
     pub(crate) fn emit_link_activated(&self, uri: &str) -> bool {
         self.emit_by_name::<bool>("link-activated", &[&uri.to_string()])
     }
+
+    pub(crate) fn current_generation(&self) -> u64 {
+        self.imp().generation.get()
+    }
 }

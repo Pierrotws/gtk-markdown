@@ -156,7 +156,7 @@ fn accumulate_inline_segments(
             }
             InlineSegment::Image { alt, src } => {
                 flush_text_buffer(view, flow, buffer, has_link, style);
-                match picture_from_src(src, base_path) {
+                match picture_from_src(view, src, base_path) {
                     Some(picture) => flow.insert(&picture, -1),
                     None => flow.insert(&image_fallback_label(alt), -1),
                 }
@@ -229,7 +229,11 @@ fn combine_emphasis(outer: Emphasis, inner: Emphasis) -> Emphasis {
 const PICTURE_CSS_CLASS: &str = "gtk-markdown-picture";
 const MAX_PICTURE_HEIGHT_PX: u32 = 480;
 
-fn picture_from_src(src: &str, base_path: Option<&Path>) -> Option<gtk::Picture> {
+fn picture_from_src(
+    view: &MarkdownTextView,
+    src: &str,
+    base_path: Option<&Path>,
+) -> Option<gtk::Picture> {
     if src.starts_with("http://") || src.starts_with("https://") {
         return None;
     }
@@ -247,12 +251,18 @@ fn picture_from_src(src: &str, base_path: Option<&Path>) -> Option<gtk::Picture>
     #[allow(deprecated)]
     picture.set_keep_aspect_ratio(true);
     picture.add_css_class(PICTURE_CSS_CLASS);
-    spawn_paintable_loader(&picture, resolved);
+    spawn_paintable_loader(view, &picture, resolved);
     Some(picture)
 }
 
-fn spawn_paintable_loader(picture: &gtk::Picture, path: std::path::PathBuf) {
+fn spawn_paintable_loader(
+    view: &MarkdownTextView,
+    picture: &gtk::Picture,
+    path: std::path::PathBuf,
+) {
     use gtk::{gdk_pixbuf, gio};
+    let generation = view.current_generation();
+    let view = view.downgrade();
     let picture = picture.clone();
     glib::spawn_future_local(async move {
         let file = gio::File::for_path(&path);
@@ -262,6 +272,12 @@ fn spawn_paintable_loader(picture: &gtk::Picture, path: std::path::PathBuf) {
         let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_stream_future(&stream).await else {
             return;
         };
+        // Skip if the View was dropped or a newer rebuild started while
+        // we were decoding — the Picture is no longer in the tree.
+        let Some(view) = view.upgrade() else { return };
+        if view.current_generation() != generation {
+            return;
+        }
         #[allow(deprecated)]
         let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
         picture.set_paintable(Some(&texture));
