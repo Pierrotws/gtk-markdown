@@ -372,7 +372,7 @@ fn parse_wrapped<'a>(value: &'a str, tokens: &[&str]) -> Option<(usize, &'a str,
 fn parse_link(value: &str) -> Option<(&str, &str, usize)> {
     let label_end = value.strip_prefix('[')?.find("](")? + 1;
     let uri_start = label_end + 2;
-    let uri_end = value[uri_start..].find(')')? + uri_start;
+    let uri_end = balanced_close_paren_offset(&value[uri_start..])? + uri_start;
     let label = &value[1..label_end];
     let uri = &value[uri_start..uri_end];
 
@@ -381,6 +381,23 @@ fn parse_link(value: &str) -> Option<(&str, &str, usize)> {
     }
 
     Some((label, uri, uri_end + 1))
+}
+
+fn balanced_close_paren_offset(value: &str) -> Option<usize> {
+    let mut depth: u32 = 1;
+    for (offset, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_image(value: &str) -> Option<(&str, &str, usize)> {
@@ -579,6 +596,36 @@ mod tests {
         assert_eq!(
             parse_inline_segments(r"a\b"),
             vec![InlineSegment::Text("a"), InlineSegment::Text(r"\b")]
+        );
+    }
+
+    #[test]
+    fn balanced_parens_inside_uri() {
+        assert_eq!(
+            parse_inline_segments("[link](https://example.com/path(1))"),
+            vec![InlineSegment::Link {
+                label: "link",
+                uri: "https://example.com/path(1)",
+            }]
+        );
+    }
+
+    #[test]
+    fn deeply_nested_parens_inside_uri() {
+        assert_eq!(
+            parse_inline_segments("[x](a(b(c)d)e)"),
+            vec![InlineSegment::Link {
+                label: "x",
+                uri: "a(b(c)d)e",
+            }]
+        );
+    }
+
+    #[test]
+    fn unbalanced_uri_paren_falls_back_to_text() {
+        assert_eq!(
+            parse_inline_segments("[link](http"),
+            vec![InlineSegment::Text("[link](http")]
         );
     }
 

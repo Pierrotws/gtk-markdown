@@ -14,7 +14,7 @@ purged from this report as they land. Commit history carries the details.
 
 ## Tooling status
 
-- `cargo test` — 20/20 pass.
+- `cargo test` — 23/23 pass.
 - `cargo clippy --all-targets` — clean at the default lint level.
 - `cargo clippy -- -W clippy::pedantic` — 5 warnings (cosmetic; itemized in
   §6.4).
@@ -24,20 +24,6 @@ purged from this report as they land. Commit history carries the details.
 ---
 
 ## 1. Correctness — parser
-
-### 1.5 Link/image URI truncates at the first `)` — **Medium**
-**Location:** `src/parser.rs:269–281`
-
-```rust
-let uri_end = value[uri_start..].find(')')? + uri_start;
-```
-
-`[link](https://example.com/path(1))` truncates the URI to
-`https://example.com/path(1`. CommonMark handles this either via balanced
-parens or `\)` escapes.
-
-**Fix:** scan for a balanced `)`, or accept `\)` as an escaped paren inside
-the URI. For an MVP, balanced parens are easier (track a depth counter).
 
 ### 1.6 Empty alt text rejects valid images — **Low**
 **Location:** `src/parser.rs:269–281` (via `parse_link`)
@@ -368,16 +354,15 @@ Remaining work, roughly in the order I'd tackle it:
 
 1. **§2.2 — Inline rendering rewrite (FlowBox → Pango Labels).**
    Biggest visual-quality lever. Subsumes §4.1.
-2. **§1.5 — Balanced URI parens.** Small parser fix.
-3. **§2.6 — Early-return when markdown unchanged.** One-liner.
-4. **§2.3 + §2.4 + §2.5 — Image robustness.** Size constraints, base-path
+2. **§2.6 — Early-return when markdown unchanged.** One-liner.
+3. **§2.3 + §2.4 + §2.5 — Image robustness.** Size constraints, base-path
    API, async loading.
-5. **§3.1 — `glib::Properties` derive.** Brings the widget in line with
+4. **§3.1 — `glib::Properties` derive.** Brings the widget in line with
    gtk-rs idioms; cheap once you're already touching `imp.rs`.
-6. **§4.2 — Code block as one Label.**
-7. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
+5. **§4.2 — Code block as one Label.**
+6. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
    addition, near-zero risk.
-8. Everything else (polish, micro-perf, optional features).
+7. Everything else (polish, micro-perf, optional features).
 
 ---
 
