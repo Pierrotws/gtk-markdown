@@ -129,20 +129,6 @@ multiplies the cost.
 with async streaming, or `gtk::Picture::set_paintable` from a background
 thread). At minimum, document the synchronous behaviour.
 
-### 2.6 `set_markdown` always rebuilds from scratch — **Medium**
-**Location:** `src/imp.rs:32–38`, `src/render.rs:9–31`
-
-Every call clears all children and re-creates every widget tree, even if
-the new markdown differs by one character. This makes a typing-driven
-preview noticeably janky for non-trivial documents (each keystroke
-destroys/recreates dozens of widgets). It also drops scroll position,
-selection, focus.
-
-**Fix:** an incremental diff is a big change. A cheaper intermediate is to
-*not* destroy children when the new markdown equals the cached value
-(currently it still rebuilds — `set_markdown` doesn't compare). Add an
-early-return on equality.
-
 ### 2.7 Heading link styling has a bug, code links go unstyled — **Low**
 **Location:** `src/render.rs:169–185`
 
@@ -354,15 +340,14 @@ Remaining work, roughly in the order I'd tackle it:
 
 1. **§2.2 — Inline rendering rewrite (FlowBox → Pango Labels).**
    Biggest visual-quality lever. Subsumes §4.1.
-2. **§2.6 — Early-return when markdown unchanged.** One-liner.
-3. **§2.3 + §2.4 + §2.5 — Image robustness.** Size constraints, base-path
+2. **§2.3 + §2.4 + §2.5 — Image robustness.** Size constraints, base-path
    API, async loading.
-4. **§3.1 — `glib::Properties` derive.** Brings the widget in line with
+3. **§3.1 — `glib::Properties` derive.** Brings the widget in line with
    gtk-rs idioms; cheap once you're already touching `imp.rs`.
-5. **§4.2 — Code block as one Label.**
-6. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
+4. **§4.2 — Code block as one Label.**
+5. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
    addition, near-zero risk.
-7. Everything else (polish, micro-perf, optional features).
+6. Everything else (polish, micro-perf, optional features).
 
 ---
 

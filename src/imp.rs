@@ -30,6 +30,13 @@ impl BoxImpl for MarkdownTextView {}
 
 impl MarkdownTextView {
     pub fn set_markdown(&self, obj: &super::MarkdownTextView, text: &str) {
+        if *self.markdown.borrow() == text {
+            return;
+        }
+        self.rebuild(obj, text);
+    }
+
+    pub fn rebuild(&self, obj: &super::MarkdownTextView, text: &str) {
         let container: &gtk::Box = obj.upcast_ref();
         clear_box(container);
         render::render_into(container, text, self.heading_level_offset.get());

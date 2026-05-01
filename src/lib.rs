@@ -56,6 +56,6 @@ impl MarkdownTextView {
         }
         self.imp().heading_level_offset.set(offset);
         let text = self.markdown();
-        self.set_markdown(&text);
+        self.imp().rebuild(self, &text);
     }
 }
