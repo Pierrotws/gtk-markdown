@@ -747,6 +747,56 @@ mod tests {
     }
 
     #[test]
+    fn empty_input_yields_no_blocks() {
+        assert_eq!(markdown_blocks(""), Vec::<MarkdownBlock>::new());
+    }
+
+    #[test]
+    fn crlf_line_endings_collapse_into_paragraphs() {
+        assert_eq!(
+            markdown_blocks("hello\r\nworld\r\n\r\nnext"),
+            vec![
+                MarkdownBlock::Paragraph("hello world".into()),
+                MarkdownBlock::Paragraph("next".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn unclosed_code_fence_emits_block_at_eof() {
+        assert_eq!(
+            markdown_blocks("```\nfn main() {}\n"),
+            vec![MarkdownBlock::Code("fn main() {}".into())]
+        );
+    }
+
+    #[test]
+    fn unmatched_emphasis_delimiter_falls_back_to_text() {
+        // Text walker splits at every special-char boundary; the important
+        // invariant is that together the segments preserve the input verbatim.
+        let segments = parse_inline_segments("**foo");
+        let reassembled: String = segments
+            .iter()
+            .map(|seg| match seg {
+                InlineSegment::Text(t) => *t,
+                _ => panic!("expected only Text segments, got {:?}", seg),
+            })
+            .collect();
+        assert_eq!(reassembled, "**foo");
+    }
+
+    #[test]
+    fn heading_keeps_inline_emphasis_in_block_text() {
+        assert_eq!(
+            markdown_blocks("# Hello *world*"),
+            vec![MarkdownBlock::Heading {
+                level: 1,
+                text: "Hello *world*".into(),
+            }]
+        );
+    }
+
+    #[test]
     fn nested_emphasis_recurses() {
         assert_eq!(
             parse_inline_segments("**outer *inner* outer**"),

@@ -14,7 +14,7 @@ purged from this report as they land. Commit history carries the details.
 
 ## Tooling status
 
-- `cargo test` — 28/28 pass.
+- `cargo test` — 33/33 pass.
 - `cargo clippy --all-targets` — clean at the default lint level.
 - `cargo clippy -- -W clippy::pedantic` — 5 warnings (cosmetic; itemized in
   §6.4).
@@ -38,17 +38,6 @@ tree are possible (gtk-rs supports headless testing via
 `gtk::init` in a test binary on a system with X/Wayland or `Xvfb`), but
 not a free-roll. At minimum, add a test that calls
 `render_into(&fake_box, "...")` and asserts the resulting child types.
-
-### 5.3 No tests for edge cases — **Low**
-
-Suggested additions:
-
-- CRLF line endings (`value.lines()` already strips `\r\n`, so probably
-  fine, but worth pinning).
-- Empty input.
-- A code block at end-of-input without a closing fence.
-- An unmatched emphasis delimiter (`**foo`).
-- A heading with inline emphasis (`# Hello *world*`).
 
 ---
 
