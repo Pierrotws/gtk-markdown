@@ -236,6 +236,8 @@ fn combine_emphasis(outer: Emphasis, inner: Emphasis) -> Emphasis {
 
 const PICTURE_CSS_CLASS: &str = "gtk-markdown-picture";
 const MAX_PICTURE_HEIGHT_PX: u32 = 480;
+const MIN_PICTURE_HEIGHT_PX: u32 = 64;
+const MIN_PICTURE_WIDTH_PX: u32 = 64;
 const HORIZONTAL_RULE_MARGIN_PX: i32 = 6;
 
 fn picture_from_src(
@@ -300,7 +302,11 @@ fn install_picture_css_provider() {
         let provider = gtk::CssProvider::new();
         #[allow(deprecated)]
         provider.load_from_data(&format!(
-            ".{PICTURE_CSS_CLASS} {{ max-height: {MAX_PICTURE_HEIGHT_PX}px; }}"
+            ".{PICTURE_CSS_CLASS} {{ \
+             min-width: {MIN_PICTURE_WIDTH_PX}px; \
+             min-height: {MIN_PICTURE_HEIGHT_PX}px; \
+             max-height: {MAX_PICTURE_HEIGHT_PX}px; \
+             }}"
         ));
         if let Some(display) = gtk::gdk::Display::default() {
             gtk::style_context_add_provider_for_display(
