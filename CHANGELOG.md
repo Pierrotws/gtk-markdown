@@ -1,4 +1,4 @@
-## [Unreleased]
+## 0.2.0 — 2026-05-01
 
 ### Added
 
@@ -16,6 +16,20 @@
 - `.github/workflows/ci.yml` — runs `cargo clippy --all-targets -D
   warnings`, `cargo test --all-targets`, and `cargo doc --no-deps -D
   warnings` on each push and PR.
+- Integration test (`tests/link_activated.rs`) covering the
+  `link-activated` accumulator semantics and the activate-link
+  trampoline end-to-end.
+- Minimum size (64 × 64 px) for embedded pictures via the same CSS
+  provider that pins `max-height`. Tiny images no longer shrink below
+  a readable size when the container narrows.
+
+### Changed
+
+- Inline `` `code` `` now renders as a pure-Pango span (monospace,
+  gray background, white foreground) inside the surrounding paragraph
+  Label, so it wraps with the rest of the text instead of being
+  hoisted into a separate framed FlowBox child. Code blocks
+  (triple-backtick) keep the `gtk::Frame` + `gtk::Label` rendering.
 
 ### Fixed
 
