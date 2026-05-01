@@ -46,7 +46,7 @@ fn main() {
 
     app.connect_activate(|app| {
         let view = MarkdownTextView::new();
-        view.set_markdown(&sample_markdown());
+        view.set_markdown(sample_markdown());
         view.set_margin_top(12);
         view.set_margin_bottom(12);
         view.set_margin_start(12);

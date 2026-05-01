@@ -139,21 +139,6 @@ unnecessarily in the call chain. `Cow<str>` would be cleaner. Micro.
 
 ## 3. API design
 
-### 3.1 No GObject properties — **Medium**
-**Location:** `src/imp.rs`, `src/lib.rs`
-
-Modern gtk-rs uses `#[glib::Properties]` to expose fields as GObject
-properties. The current impl has bare `RefCell<String>` and
-`Cell<u32>` and a hand-rolled setter. As-is, you can't:
-
-- Bind `markdown` to another widget via `bind_property`.
-- Set the property from a `.ui` file / GtkBuilder.
-- Connect to `notify::markdown` from outside.
-
-**Fix:** derive `glib::Properties` for `markdown` and
-`heading-level-offset`. This also subsumes the manual "no-op if equal"
-guard.
-
 ### 3.2 `set_heading_level_offset` rebuilds even when markdown is empty — **Low**
 **Location:** `src/lib.rs:53–60`
 
@@ -170,21 +155,6 @@ When `text` is empty, `set_markdown("")` still does
 `clear_box` + `render_into("")`. Cheap but needless.
 
 **Fix:** skip the rebuild if `markdown.borrow().is_empty()`.
-
-### 3.3 `imp::set_markdown` takes a redundant `obj` parameter — **Low**
-**Location:** `src/imp.rs:32`
-
-```rust
-pub fn set_markdown(&self, obj: &super::MarkdownTextView, text: &str) {
-    let container: &gtk::Box = obj.upcast_ref();
-    ...
-}
-```
-
-`self.obj()` would give the same result — passing it from `lib.rs` is
-unidiomatic and invites mismatched-`obj` bugs in callers.
-
-**Fix:** drop the parameter, use `self.obj()` internally.
 
 ### 3.4 No way to override link click behaviour — **Low**
 
@@ -301,11 +271,9 @@ Remaining work, roughly in the order I'd tackle it:
 1. **§2.2 — Inline rendering rewrite (FlowBox → Pango Labels).**
    Biggest visual-quality lever. Subsumes §4.1.
 2. **§2.5 — Async image loading.**
-3. **§3.1 — `glib::Properties` derive.** Brings the widget in line with
-   gtk-rs idioms; cheap once you're already touching `imp.rs`.
-4. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
+3. **§5.3 — Fill obvious test gaps** (end-of-input edge cases) — pure
    addition, near-zero risk.
-5. Everything else (polish, micro-perf, optional features).
+4. Everything else (polish, micro-perf, optional features).
 
 ---
 
