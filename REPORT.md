@@ -92,18 +92,6 @@ into a single `Label` and only insert separate widgets for `Code` and
 `Image` segments. Use a horizontal `Box` with children that are mostly
 single-paragraph Labels to preserve in-paragraph wrapping inside Pango.
 
-### 2.4 Image source is resolved against the process CWD — **Medium**
-**Location:** `src/render.rs:62–67`
-
-`std::path::Path::new(src)` is interpreted relative to the *process
-working directory*, not relative to the document the markdown came from.
-Most renderers resolve relative paths against the document path, which
-this widget has no way to know about.
-
-**Fix:** add a `set_base_path(&self, base: Option<&Path>)` API; when
-present, join it with relative `src` before checking. Document the
-fallback behaviour either way.
-
 ### 2.5 Synchronous I/O on the GTK main thread — **Medium**
 **Location:** `src/render.rs:62–67`
 
@@ -328,7 +316,7 @@ Remaining work, roughly in the order I'd tackle it:
 
 1. **§2.2 — Inline rendering rewrite (FlowBox → Pango Labels).**
    Biggest visual-quality lever. Subsumes §4.1.
-2. **§2.4 + §2.5 — Image robustness.** Base-path API, async loading.
+2. **§2.5 — Async image loading.**
 3. **§3.1 — `glib::Properties` derive.** Brings the widget in line with
    gtk-rs idioms; cheap once you're already touching `imp.rs`.
 4. **§4.2 — Code block as one Label.**

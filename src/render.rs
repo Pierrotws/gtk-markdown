@@ -1,33 +1,45 @@
 //! Block / inline tokens → GTK widgets.
 
+use std::path::Path;
+
 use gtk::{glib, prelude::*};
 
 use crate::parser::{
     markdown_blocks, parse_inline_segments, Emphasis, InlineSegment, InlineStyle, MarkdownBlock,
 };
 
-pub(crate) fn render_into(container: &gtk::Box, value: &str, heading_level_offset: u32) {
+pub(crate) fn render_into(
+    container: &gtk::Box,
+    value: &str,
+    heading_level_offset: u32,
+    base_path: Option<&Path>,
+) {
     for block in markdown_blocks(value) {
         match block {
             MarkdownBlock::Paragraph(text) => {
-                container.append(&inline_flow(&text, InlineStyle::Normal, None));
+                container.append(&inline_flow(&text, InlineStyle::Normal, None, base_path));
             }
             MarkdownBlock::Heading { level, text } => {
                 let css_level = level.saturating_add(heading_level_offset as usize);
-                container.append(&inline_flow(&text, InlineStyle::Heading(css_level), None));
+                container.append(&inline_flow(
+                    &text,
+                    InlineStyle::Heading(css_level),
+                    None,
+                    base_path,
+                ));
             }
             MarkdownBlock::Quote(text) => {
-                container.append(&inline_flow(&text, InlineStyle::Quote, None));
+                container.append(&inline_flow(&text, InlineStyle::Quote, None, base_path));
             }
             MarkdownBlock::List { ordered, start, items } => {
-                container.append(&list_box(ordered, start, &items));
+                container.append(&list_box(ordered, start, &items, base_path));
             }
             MarkdownBlock::Code(code) => container.append(&code_block_frame(&code)),
         }
     }
 }
 
-fn list_box(ordered: bool, start: u32, items: &[String]) -> gtk::Box {
+fn list_box(ordered: bool, start: u32, items: &[String], base_path: Option<&Path>) -> gtk::Box {
     let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     for (offset, item) in items.iter().enumerate() {
         let marker = if ordered {
@@ -35,12 +47,17 @@ fn list_box(ordered: bool, start: u32, items: &[String]) -> gtk::Box {
         } else {
             "•".to_string()
         };
-        outer.append(&inline_flow(item, InlineStyle::Normal, Some(&marker)));
+        outer.append(&inline_flow(item, InlineStyle::Normal, Some(&marker), base_path));
     }
     outer
 }
 
-fn inline_flow(text: &str, style: InlineStyle, marker: Option<&str>) -> gtk::FlowBox {
+fn inline_flow(
+    text: &str,
+    style: InlineStyle,
+    marker: Option<&str>,
+    base_path: Option<&Path>,
+) -> gtk::FlowBox {
     let flow = gtk::FlowBox::new();
     flow.set_selection_mode(gtk::SelectionMode::None);
     flow.set_homogeneous(false);
@@ -52,7 +69,13 @@ fn inline_flow(text: &str, style: InlineStyle, marker: Option<&str>) -> gtk::Flo
         flow.insert(&text_label(marker, Emphasis::Normal, style), -1);
     }
 
-    render_inline_segments(&flow, parse_inline_segments(text), Emphasis::Normal, style);
+    render_inline_segments(
+        &flow,
+        parse_inline_segments(text),
+        Emphasis::Normal,
+        style,
+        base_path,
+    );
 
     flow
 }
@@ -62,17 +85,18 @@ fn render_inline_segments(
     segments: Vec<InlineSegment<'_>>,
     base_emphasis: Emphasis,
     style: InlineStyle,
+    base_path: Option<&Path>,
 ) {
     for segment in segments {
         match segment {
             InlineSegment::Text(text) => append_text_segment(flow, text, base_emphasis, style),
             InlineSegment::Styled { children, emphasis } => {
                 let composed = combine_emphasis(base_emphasis, emphasis);
-                render_inline_segments(flow, children, composed, style);
+                render_inline_segments(flow, children, composed, style, base_path);
             }
             InlineSegment::Code(text) => flow.insert(&inline_code_frame(text), -1),
             InlineSegment::Link { label, uri } => flow.insert(&link_label(label, uri, style), -1),
-            InlineSegment::Image { alt, src } => match picture_from_src(src) {
+            InlineSegment::Image { alt, src } => match picture_from_src(src, base_path) {
                 Some(picture) => flow.insert(&picture, -1),
                 None => flow.insert(&image_fallback_label(alt), -1),
             },
@@ -94,16 +118,20 @@ fn combine_emphasis(outer: Emphasis, inner: Emphasis) -> Emphasis {
 const PICTURE_CSS_CLASS: &str = "gtk-markdown-picture";
 const MAX_PICTURE_HEIGHT_PX: u32 = 480;
 
-fn picture_from_src(src: &str) -> Option<gtk::Picture> {
+fn picture_from_src(src: &str, base_path: Option<&Path>) -> Option<gtk::Picture> {
     if src.starts_with("http://") || src.starts_with("https://") {
         return None;
     }
-    let path = std::path::Path::new(src);
-    if !path.is_file() {
+    let raw = Path::new(src);
+    let resolved: std::path::PathBuf = match base_path {
+        Some(base) if !raw.is_absolute() => base.join(raw),
+        _ => raw.to_path_buf(),
+    };
+    if !resolved.is_file() {
         return None;
     }
     install_picture_css_provider();
-    let picture = gtk::Picture::for_filename(path);
+    let picture = gtk::Picture::for_filename(&resolved);
     picture.set_can_shrink(true);
     #[allow(deprecated)]
     picture.set_keep_aspect_ratio(true);

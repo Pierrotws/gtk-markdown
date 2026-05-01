@@ -5,6 +5,8 @@
 //! child widgets (paragraphs, headings, lists, quotes, code blocks, inline
 //! code, links, emphasis).
 
+use std::path::{Path, PathBuf};
+
 use gtk::{glib, subclass::prelude::*};
 
 mod imp;
@@ -55,6 +57,27 @@ impl MarkdownTextView {
             return;
         }
         self.imp().heading_level_offset.set(offset);
+        let text = self.markdown();
+        self.imp().rebuild(self, &text);
+    }
+
+    /// Returns the base path that relative image URIs are resolved against.
+    pub fn base_path(&self) -> Option<PathBuf> {
+        self.imp().base_path.borrow().clone()
+    }
+
+    /// Sets the base path used to resolve relative image URIs and re-renders.
+    ///
+    /// When `Some`, relative `src` values in `![alt](src)` are joined with
+    /// `base` before checking the filesystem. When `None` (the default),
+    /// relative paths are resolved against the process working directory.
+    /// Absolute paths and `http(s)://` URIs are unaffected.
+    pub fn set_base_path(&self, base: Option<&Path>) {
+        let new = base.map(Path::to_path_buf);
+        if *self.imp().base_path.borrow() == new {
+            return;
+        }
+        *self.imp().base_path.borrow_mut() = new;
         let text = self.markdown();
         self.imp().rebuild(self, &text);
     }
