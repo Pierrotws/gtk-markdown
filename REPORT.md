@@ -14,7 +14,8 @@ purged from this report as they land. Commit history carries the details.
 
 ## Tooling status
 
-- `cargo test` — 33/33 pass.
+- `cargo test` — 33/33 pass (plus 1 #[ignore]d render-pipeline test
+  opted in via `cargo test -- --ignored`; needs a display).
 - `cargo clippy --all-targets` — clean at the default lint level.
 - `cargo clippy -- -W clippy::pedantic` — 5 warnings (cosmetic; itemized in
   §6.4).
@@ -24,20 +25,6 @@ purged from this report as they land. Commit history carries the details.
 ---
 
 ## 3. API design
-
----
-
-## 5. Test coverage
-
-### 5.2 No render-pipeline tests — **Low**
-
-All render tests are micro-tests of helper functions
-(`display_text_segment`, `heading_css_class`, `styled_text_markup`).
-End-to-end tests that build a `MarkdownTextView` and inspect its widget
-tree are possible (gtk-rs supports headless testing via
-`gtk::init` in a test binary on a system with X/Wayland or `Xvfb`), but
-not a free-roll. At minimum, add a test that calls
-`render_into(&fake_box, "...")` and asserts the resulting child types.
 
 ---
 

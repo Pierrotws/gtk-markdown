@@ -411,3 +411,54 @@ mod tests {
         assert_eq!(combine_emphasis(Emphasis::BoldItalic, Emphasis::Italic), Emphasis::BoldItalic);
     }
 }
+
+// Render-pipeline test. Builds real GTK widgets and requires a display
+// (X11, Wayland, or Xvfb). #[ignore]d by default; opt in with
+// `cargo test -- --ignored`. GTK pins itself to one thread, so all
+// rendering assertions live in a single test function.
+#[cfg(test)]
+mod render_pipeline_tests {
+    use crate::MarkdownTextView;
+    use gtk::prelude::*;
+
+    fn child_types(view: &MarkdownTextView) -> Vec<String> {
+        let container: &gtk::Box = view.upcast_ref();
+        let mut types = Vec::new();
+        let mut child = container.first_child();
+        while let Some(c) = child {
+            types.push(c.type_().name().to_string());
+            child = c.next_sibling();
+        }
+        types
+    }
+
+    #[test]
+    #[ignore]
+    fn renders_each_block_kind() {
+        gtk::init().expect("gtk::init");
+
+        let para = MarkdownTextView::new();
+        para.set_markdown("Hello *world*".to_string());
+        assert_eq!(child_types(&para), vec!["GtkFlowBox"]);
+
+        let hr = MarkdownTextView::new();
+        hr.set_markdown("---".to_string());
+        assert_eq!(child_types(&hr), vec!["GtkSeparator"]);
+
+        let list = MarkdownTextView::new();
+        list.set_markdown("- a\n- b\n- c".to_string());
+        assert_eq!(child_types(&list), vec!["GtkBox"]);
+
+        let code = MarkdownTextView::new();
+        code.set_markdown("```\nfn x() {}\n```".to_string());
+        assert_eq!(child_types(&code), vec!["GtkFrame"]);
+
+        let heading = MarkdownTextView::new();
+        heading.set_markdown("# Title".to_string());
+        assert_eq!(child_types(&heading), vec!["GtkFlowBox"]);
+
+        let quote = MarkdownTextView::new();
+        quote.set_markdown("> quoted".to_string());
+        assert_eq!(child_types(&quote), vec!["GtkFlowBox"]);
+    }
+}
