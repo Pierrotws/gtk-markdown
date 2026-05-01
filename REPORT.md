@@ -35,13 +35,6 @@ in-app for `app://...` URIs).
 **Fix:** expose a public `connect_link_activated` style signal (or wrap
 each link's `activate-link` and forward).
 
-### 3.5 No accessor for the parsed AST — **Low**
-
-The internal `parser` module is `pub(crate)`. Consumers who want to render
-their own way (or operate on the AST) have to re-parse with a different
-crate. Worth considering whether `MarkdownBlock` and `InlineSegment` should
-be public.
-
 ---
 
 ## 5. Test coverage

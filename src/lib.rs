@@ -15,8 +15,10 @@ use std::path::{Path, PathBuf};
 use gtk::{glib, subclass::prelude::*};
 
 mod imp;
-mod parser;
+pub mod parser;
 mod render;
+
+pub use parser::{Emphasis, InlineSegment, MarkdownBlock};
 
 glib::wrapper! {
     pub struct MarkdownTextView(ObjectSubclass<imp::MarkdownTextView>)

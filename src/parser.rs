@@ -10,8 +10,9 @@
 //! Out of scope (currently): setext headings, autolinks, tables,
 //! strikethrough, reference-style links, HTML blocks, nested lists.
 
+/// Block-level token produced by [`markdown_blocks`].
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum MarkdownBlock {
+pub enum MarkdownBlock {
     Paragraph(String),
     Heading { level: usize, text: String },
     Quote(String),
@@ -24,8 +25,10 @@ pub(crate) enum MarkdownBlock {
     HorizontalRule,
 }
 
+/// Inline-level token produced by [`parse_inline_segments`]. Borrows from
+/// the input string.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum InlineSegment<'a> {
+pub enum InlineSegment<'a> {
     Text(&'a str),
     Styled {
         children: Vec<InlineSegment<'a>>,
@@ -36,8 +39,9 @@ pub(crate) enum InlineSegment<'a> {
     Image { alt: &'a str, src: &'a str },
 }
 
+/// Emphasis applied to a [`InlineSegment::Styled`] run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Emphasis {
+pub enum Emphasis {
     Normal,
     Italic,
     Bold,
@@ -57,7 +61,9 @@ struct PendingList {
     items: Vec<String>,
 }
 
-pub(crate) fn markdown_blocks(value: &str) -> Vec<MarkdownBlock> {
+/// Parses Markdown source into a flat list of block-level tokens.
+#[must_use]
+pub fn markdown_blocks(value: &str) -> Vec<MarkdownBlock> {
     let mut blocks = Vec::new();
     let mut paragraph = String::new();
     let mut quote = String::new();
@@ -257,7 +263,10 @@ fn parse_ordered_list_item(line: &str) -> Option<(&str, &str)> {
     }
 }
 
-pub(crate) fn parse_inline_segments(value: &str) -> Vec<InlineSegment<'_>> {
+/// Parses inline Markdown source (within a paragraph or other block) into
+/// a list of inline tokens borrowing from `value`.
+#[must_use]
+pub fn parse_inline_segments(value: &str) -> Vec<InlineSegment<'_>> {
     let mut segments = Vec::new();
     let mut index = 0;
 
