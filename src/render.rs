@@ -38,7 +38,7 @@ pub(crate) fn render_into(
             MarkdownBlock::List { ordered, start, items } => {
                 container.append(&list_box(view, ordered, start, &items, base_path));
             }
-            MarkdownBlock::Code(code) => container.append(&code_block_label(&code)),
+            MarkdownBlock::Code(code) => container.append(&code_block_frame(&code)),
             MarkdownBlock::HorizontalRule => {
                 let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
                 // The outer Box has no inter-child spacing, so without
@@ -359,25 +359,34 @@ fn apply_emphasis_markup(escaped: &str, emphasis: Emphasis) -> String {
     }
 }
 
-// Pango span attributes used by both inline code and code blocks. The
-// background paints behind the glyphs only (Pango doesn't do padding), so
-// the highlight follows the text shape rather than a full rectangle.
-const CODE_SPAN_ATTRS: &str = "font_family=\"monospace\" background=\"#f0f0f0\"";
+// Inline code: pure-Pango pill (gray background, white foreground) so the
+// span flows with the surrounding paragraph text instead of breaking it
+// into a separate FlowBox child.
+const INLINE_CODE_SPAN_ATTRS: &str =
+    "font_family=\"monospace\" background=\"#888888\" foreground=\"#ffffff\"";
 
 fn code_span_markup(text: &str) -> String {
-    format!("<span {CODE_SPAN_ATTRS}>{}</span>", escape_markup(text))
+    format!("<span {INLINE_CODE_SPAN_ATTRS}>{}</span>", escape_markup(text))
 }
 
-fn code_block_label(text: &str) -> gtk::Label {
+fn code_block_frame(text: &str) -> gtk::Frame {
     let label = gtk::Label::new(None);
     label.set_selectable(true);
     label.set_use_markup(true);
     label.set_xalign(0.0);
-    label.set_hexpand(true);
-    label.set_margin_top(4);
-    label.set_margin_bottom(4);
-    label.set_markup(&code_span_markup(text));
-    label
+    label.set_markup(&format!(
+        "<span font_family=\"monospace\">{}</span>",
+        escape_markup(text)
+    ));
+    label.set_margin_top(8);
+    label.set_margin_bottom(8);
+    label.set_margin_start(8);
+    label.set_margin_end(8);
+
+    let frame = gtk::Frame::new(None);
+    frame.set_hexpand(true);
+    frame.set_child(Some(&label));
+    frame
 }
 
 fn heading_css_class(level: usize) -> String {
@@ -462,7 +471,7 @@ mod render_pipeline_tests {
 
         let code = MarkdownTextView::new();
         code.set_markdown("```\nfn x() {}\n```".to_string());
-        assert_eq!(child_types(&code), vec!["GtkLabel"]);
+        assert_eq!(child_types(&code), vec!["GtkFrame"]);
 
         let heading = MarkdownTextView::new();
         heading.set_markdown("# Title".to_string());
